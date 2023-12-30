@@ -59,5 +59,6 @@ namespace irm_detection
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr comm_latency_pub_;
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr preprocess_latency_pub_;
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr inference_latency_pub_;
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pnp_latency_pub_;
   };
 }

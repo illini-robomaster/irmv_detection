@@ -22,7 +22,7 @@ namespace irm_detection
     declare_parameters();
 
     // Initialize YOLO engine
-    yolo_engine_ = std::make_unique<YoloEngine>("/home/niceme/workspaces/irm_ros-dev/src/iRM_Vision_2023/irm_detection/models/yolov7.onnx", enable_profiling_);
+    yolo_engine_ = std::make_unique<YoloEngine>("/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx", enable_profiling_);
 
     // Initialize PnP solver
     camera_info_sub_ = node_->create_subscription<sensor_msgs::msg::CameraInfo>(
@@ -37,18 +37,19 @@ namespace irm_detection
 
     // Initialize publishers and subscribers
     armors_pub_ = node_->create_publisher<auto_aim_interfaces::msg::Armors>("/detector/armors", rclcpp::SensorDataQoS());
-#if ALLOW_DEBUG_AND_PROFILING
+    #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_) {
       total_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/detector/total_latency", rclcpp::SystemDefaultsQoS());
       comm_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/detector/comm_latency", rclcpp::SystemDefaultsQoS());
       preprocess_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/yolo_engine/preprocess_latency", rclcpp::SystemDefaultsQoS());
       inference_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/yolo_engine/inference_latency", rclcpp::SystemDefaultsQoS());
+      pnp_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/pnp_solver/pnp_latency", rclcpp::SystemDefaultsQoS());
     }
     if (enable_debug_) {
       binary_img_pub_ = image_transport::create_publisher(node_.get(), "/image/binary_image", rmw_qos_profile_sensor_data);
       visualized_img_pub_ = image_transport::create_publisher(node_.get(), "/image/visualized_image", rmw_qos_profile_sensor_data);
     }
-#endif
+    #endif
     img_sub_ = image_transport::create_subscription(node_.get(), "/image/image_raw", std::bind(&IrmDetector::message_callback, this, std::placeholders::_1), "raw", rmw_qos_profile_sensor_data);
   }
 
@@ -93,26 +94,26 @@ namespace irm_detection
 
   void IrmDetector::message_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
   {
-    rclcpp::Time callback_start_time, rotation_end_time, inference_end_time, extraction_end_time;
+    rclcpp::Time callback_start_time, rotation_end_time, extraction_end_time, pnp_end_time;
 
-#if ALLOW_DEBUG_AND_PROFILING
+    #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_)
       callback_start_time = node_->now();
-#endif
+    #endif
 
     cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
     cv::rotate(cv_ptr->image, cv_ptr->image, cv::ROTATE_180);
 
-#if ALLOW_DEBUG_AND_PROFILING
+    #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_)
       rotation_end_time = node_->now();
-#endif
+    #endif
 
     std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(cv_ptr->image);
 
     std::vector<Armor> armors = extract_armors(cv_ptr->image, bboxes);
 
-#if ALLOW_DEBUG_AND_PROFILING
+    #if ALLOW_DEBUG_AND_PROFILING
     if (enable_debug_) {
       cv::Mat visualized_image = cv_ptr->image.clone();
       visualize_armors(visualized_image, armors);
@@ -126,11 +127,14 @@ namespace irm_detection
       yolo_engine_->visualize_bboxes(binary_image, bboxes);
       binary_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", binary_image).toImageMsg());
     }
-#endif
+    #endif
 
-    if (pnp_solver_ == nullptr) {
-      return;
-    }
+    if (pnp_solver_ == nullptr) return; // This could happen if camera_info topic is not received yet
+
+    #if ALLOW_DEBUG_AND_PROFILING
+    if (enable_profiling_)
+      extraction_end_time = node_->now();
+    #endif
 
     auto_aim_interfaces::msg::Armors armors_msg;
     for (const auto &armor : armors) {
@@ -163,12 +167,17 @@ namespace irm_detection
 
     armors_pub_->publish(armors_msg);
 
-#if ALLOW_DEBUG_AND_PROFILING
+    #if ALLOW_DEBUG_AND_PROFILING
+    if (enable_profiling_)
+      pnp_end_time = node_->now();
+    #endif
+
+    #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_) {
       const auto [preprocess_time, inference_time] = yolo_engine_->get_profiling_time();
       const double rotation_time = (rotation_end_time - callback_start_time).seconds() * 1000;
-      std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, preprocess_latency_msg, inference_latency_msg;
-      total_latency_msg.data = (node_->now() - msg->header.stamp).seconds() * 1000;
+      std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, preprocess_latency_msg, inference_latency_msg, pnp_latency_msg;
+      total_latency_msg.data = (pnp_end_time - msg->header.stamp).seconds() * 1000;
       total_latency_pub_->publish(total_latency_msg);
       comm_latency_msg.data = (callback_start_time - msg->header.stamp).seconds() * 1000;
       comm_latency_pub_->publish(comm_latency_msg);
@@ -176,8 +185,10 @@ namespace irm_detection
       preprocess_latency_pub_->publish(preprocess_latency_msg);
       inference_latency_msg.data = inference_time;
       inference_latency_pub_->publish(inference_latency_msg);
+      pnp_latency_msg.data = (pnp_end_time - extraction_end_time).seconds() * 1000;
+      pnp_latency_pub_->publish(pnp_latency_msg);
     }
-#endif
+    #endif
   }
 
   std::vector<Armor> IrmDetector::extract_armors(const cv::Mat &image, const std::vector<YoloEngine::bbox> &bboxes)
