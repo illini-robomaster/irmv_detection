@@ -22,7 +22,7 @@ namespace irm_detection
     declare_parameters();
 
     // Initialize YOLO engine
-    yolo_engine_ = std::make_unique<YoloEngine>("/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx", enable_profiling_);
+    yolo_engine_ = std::make_unique<YoloEngine>("/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx", cv::Size(1280, 1024), enable_profiling_);
 
     // Initialize PnP solver
     camera_info_sub_ = node_->create_subscription<sensor_msgs::msg::CameraInfo>(
@@ -94,38 +94,32 @@ namespace irm_detection
 
   void IrmDetector::message_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
   {
-    rclcpp::Time callback_start_time, rotation_end_time, extraction_end_time, pnp_end_time;
+    rclcpp::Time callback_start_time, extraction_end_time, pnp_end_time;
 
     #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_)
       callback_start_time = node_->now();
     #endif
 
-    cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, "bgr8");
-    cv::rotate(cv_ptr->image, cv_ptr->image, cv::ROTATE_180);
-
-    #if ALLOW_DEBUG_AND_PROFILING
-    if (enable_profiling_)
-      rotation_end_time = node_->now();
-    #endif
+    cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, "rgb8");
 
     std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(cv_ptr->image);
 
-    std::vector<Armor> armors = extract_armors(cv_ptr->image, bboxes);
+    std::vector<Armor> armors = extract_armors(yolo_engine_->get_rotated_image(), bboxes);
 
     #if ALLOW_DEBUG_AND_PROFILING
     if (enable_debug_) {
-      cv::Mat visualized_image = cv_ptr->image.clone();
+      cv::Mat visualized_image = yolo_engine_->get_rotated_image().clone();
       visualize_armors(visualized_image, armors);
       yolo_engine_->visualize_bboxes(visualized_image, bboxes);
-      visualized_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", visualized_image).toImageMsg());
+      visualized_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", visualized_image).toImageMsg());
 
-      cv::Mat binary_image = cv_ptr->image.clone();
+      cv::Mat binary_image = yolo_engine_->get_rotated_image().clone();
       cv::cvtColor(binary_image, binary_image, cv::COLOR_BGR2GRAY);
       cv::threshold(binary_image, binary_image, binary_threshold_, 255, cv::THRESH_BINARY);
       cv::cvtColor(binary_image, binary_image, cv::COLOR_GRAY2BGR);
       yolo_engine_->visualize_bboxes(binary_image, bboxes);
-      binary_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", binary_image).toImageMsg());
+      binary_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", binary_image).toImageMsg());
     }
     #endif
 
@@ -175,13 +169,12 @@ namespace irm_detection
     #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_) {
       const auto [preprocess_time, inference_time] = yolo_engine_->get_profiling_time();
-      const double rotation_time = (rotation_end_time - callback_start_time).seconds() * 1000;
       std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, preprocess_latency_msg, inference_latency_msg, pnp_latency_msg;
       total_latency_msg.data = (pnp_end_time - msg->header.stamp).seconds() * 1000;
       total_latency_pub_->publish(total_latency_msg);
       comm_latency_msg.data = (callback_start_time - msg->header.stamp).seconds() * 1000;
       comm_latency_pub_->publish(comm_latency_msg);
-      preprocess_latency_msg.data = preprocess_time + rotation_time;
+      preprocess_latency_msg.data = preprocess_time;
       preprocess_latency_pub_->publish(preprocess_latency_msg);
       inference_latency_msg.data = inference_time;
       inference_latency_pub_->publish(inference_latency_msg);
@@ -237,8 +230,9 @@ namespace irm_detection
       float avg_light_length = (light_list[0].length + light_list[1].length) / 2;
       float center_distance = cv::norm(armor.left_light.center - armor.right_light.center) / avg_light_length;
       armor.size = center_distance > armor_min_large_center_distance_ ? ArmorSize::LARGE : ArmorSize::SMALL;
-      bool center_distance_valid = (armor.size == ArmorSize::SMALL && armor_min_small_center_distance_ < center_distance && center_distance < armor_max_small_center_distance_) || 
-                                   (armor.size == ArmorSize::LARGE && armor_min_large_center_distance_ < center_distance && center_distance < armor_max_large_center_distance_);
+      bool center_distance_valid = 
+      (armor.size == ArmorSize::SMALL && armor_min_small_center_distance_ < center_distance && center_distance < armor_max_small_center_distance_) || 
+      (armor.size == ArmorSize::LARGE && armor_min_large_center_distance_ < center_distance && center_distance < armor_max_large_center_distance_);
       if (!center_distance_valid) continue;
       armors.emplace_back(armor);
     }

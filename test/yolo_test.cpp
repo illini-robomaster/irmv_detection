@@ -6,8 +6,8 @@
 
 namespace fs = std::filesystem;
 
-constexpr char TEST_MODEL_PATH[] = "/home/niceme/workspaces/irm_ros-dev/src/iRM_Vision_2023/irm_detection/models/yolov7.onnx";
-constexpr char TEST_IMAGE_PATH[] = "/home/niceme/workspaces/irm_ros-dev/src/iRM_Vision_2023/irm_detection/test/rm_test.png";
+constexpr char TEST_MODEL_PATH[] = "/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx";
+constexpr char TEST_IMAGE_PATH[] = "/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/test/rm_test.jpg";
 
 static void visualize_bboxes(cv::Mat &image, std::vector<irm_detection::YoloEngine::bbox> &bboxes)
 {
@@ -28,12 +28,12 @@ static void visualize_bboxes(cv::Mat &image, std::vector<irm_detection::YoloEngi
 TEST(irm_detection, yolo_engine_demo)
 {
   cudaSetDevice(0);
-  irm_detection::YoloEngine yolo_engine(TEST_MODEL_PATH);
+  irm_detection::YoloEngine yolo_engine(TEST_MODEL_PATH, cv::Size(1280, 1024));
 
   fs::path image_path(TEST_IMAGE_PATH);
 
   cv::Mat image = cv::imread(image_path.string());
-  cv::Mat visualized_image = image.clone();
+  cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
   cv::namedWindow("result", cv::WINDOW_NORMAL);
 
   std::vector<irm_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
@@ -50,6 +50,7 @@ TEST(irm_detection, yolo_engine_demo)
     std::cout << magic_enum::enum_name(bbox.class_id) << std::endl;
   }
 
+  cv::Mat visualized_image = yolo_engine.get_rotated_image().clone();
   visualize_bboxes(visualized_image, bboxes);
 
   cv::imshow("result", visualized_image);
@@ -60,27 +61,34 @@ TEST(irm_detection, yolo_engine_demo)
 TEST(irm_detection, yolo_engine_benchmark)
 {
   cudaSetDevice(0);
-  irm_detection::YoloEngine yolo_engine(TEST_MODEL_PATH, true);
+  irm_detection::YoloEngine yolo_engine(TEST_MODEL_PATH, cv::Size(1280, 1024), true);
 
   fs::path image_path(TEST_IMAGE_PATH);
 
   cv::Mat image = cv::imread(image_path.string());
 
   std::cout << "Benchmarking..." << std::endl;
+
+  float preprocess_time = 0.0, inference_time = 0.0;
+
   std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
   for (int i = 0; i < 1000; i++) {
     std::vector<irm_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
+    auto [preprocess_time_, inference_time_] = yolo_engine.get_profiling_time();
+    preprocess_time += preprocess_time_;
+    inference_time += inference_time_;
   }
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 
   float avg_time = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000.0;
 
+  std::cout << "Average detection time: " << avg_time << " ms" << std::endl;
+  std::cout << "Average preprocess time: " << preprocess_time / 1000.0 << " ms" << std::endl;
+  std::cout << "Average inference time: " << inference_time / 1000.0 << " ms" << std::endl;
   // A detection time larger than 30 ms generally means very bad performance.
   ASSERT_LT(avg_time, 30);
-
-  std::cout << "Average detection time: " << avg_time << " ms" << std::endl;
 }
 
 int main(int argc, char **argv)

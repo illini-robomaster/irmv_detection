@@ -8,6 +8,7 @@
 #include "NvInfer.h"
 #include "opencv2/opencv.hpp"
 #include "irm_detection/armor.hpp"
+#include "npp.h"
 
 using namespace nvinfer1;
 
@@ -33,7 +34,7 @@ namespace irm_detection
         }
       };
 
-      YoloEngine(const std::string &onnx_file_path, bool enable_profiling = false);
+      YoloEngine(const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling = false);
       ~YoloEngine();
       std::vector<bbox> detect(const cv::Mat &image);
       void visualize_bboxes(cv::Mat &image, const std::vector<bbox> &bboxes);
@@ -41,17 +42,29 @@ namespace irm_detection
       {
         return std::make_tuple(preprocess_time_, inference_time_);
       }
+      const cv::Mat & get_rotated_image()
+      {
+        return rotated_image_;
+      }
 
     private:
       void load_engine_file(const std::string &engine_file_path);
-      void preprocess(const cv::Mat &image, cv::Mat &preprocessed_image);
+      void preprocess(const cv::Mat &image);
       std::vector<bbox> parse_output(float scale_x, float scale_y);
+
+      // OpenCV related
+      cv::Mat rotated_image_;
+      cv::Size image_input_size_;
 
       // TensorRT related
       IRuntime *runtime_;
       ICudaEngine *engine_;
       IExecutionContext *context_;
       cudaStream_t stream_;
+      NppStreamContext npp_context_;
+      uint8_t *rotated_image_buffer_;
+      uint8_t *resized_image_buffer_;
+      float *input_buffer_hwc_;
       float *input_buffer_;
       struct {
         int32_t *num_dets;

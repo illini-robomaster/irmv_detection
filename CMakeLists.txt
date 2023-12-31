@@ -45,6 +45,9 @@ target_link_libraries(irm_detection
   nvonnxparser
   nvinfer_plugin
   ${CUDA_LIBRARIES}
+  ${CUDA_npp_LIBRARY}
+  ${CUDA_nppc_LIBRARY}
+  ${CUDA_nppi_LIBRARY}
 )
 target_include_directories(irm_detection PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

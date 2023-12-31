@@ -16,6 +16,9 @@
 
 using namespace nvinfer1;
 using namespace nvonnxparser;
+// #define NPP_CHECK_NPP(S) do {NppStatus eStatusNPP; \
+//         eStatusNPP = S; \
+//         if (eStatusNPP != NPP_SUCCESS) std::cout << "NPP_CHECK_NPP - eStatusNPP = " << "("<< eStatusNPP << ")" << std::endl;;} while (false)
 
 namespace irm_detection
 {
@@ -23,7 +26,7 @@ namespace irm_detection
 
   namespace fs = std::filesystem;
 
-  YoloEngine::YoloEngine(const std::string &onnx_file_path, bool enable_profiling)
+  YoloEngine::YoloEngine(const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling) : image_input_size_(image_input_size)
   {
     fs::path onnx_file(onnx_file_path);
     fs::path engine_file(onnx_file);
@@ -41,6 +44,7 @@ namespace irm_detection
 
     context_ = engine_->createExecutionContext();
 
+    // Not sure why nVidia doesn't provide a function to get the size of a Dims object
     auto get_dim_size = [](const Dims &dims) {
       size_t size = 1;
       for (int i = 0; i < dims.nbDims; ++i) {
@@ -55,12 +59,18 @@ namespace irm_detection
     Dims scores_dims = engine_->getTensorShape("det_scores");
     Dims labels_dims = engine_->getTensorShape("det_classes");
 
-    cudaMallocManaged((void **)&input_buffer_,  get_dim_size(input_dims)* sizeof(float));
+    // Use unified memory to gain better performance on Jetson devices
+    cudaMallocManaged((void **)&rotated_image_buffer_, image_input_size.height * image_input_size.width * 3);
     cudaMallocManaged((void **)&output_buffer_.num_dets, get_dim_size(num_dets_dims) * sizeof(int));
     cudaMallocManaged((void **)&output_buffer_.bboxes, get_dim_size(bboxes_dims) * sizeof(float));
     cudaMallocManaged((void **)&output_buffer_.scores, get_dim_size(scores_dims) * sizeof(float));
     cudaMallocManaged((void **)&output_buffer_.labels, get_dim_size(labels_dims) * sizeof(int));
+    // Below buffers won't be used by CPU, device memory is used to avoid unnecessary caching on CPU side (this has a huge impact on dGPU devices, maybe not too much on Jetson)
+    cudaMalloc((void **)&resized_image_buffer_, get_dim_size(input_dims));
+    cudaMalloc((void **)&input_buffer_hwc_, get_dim_size(input_dims) * sizeof(float));
+    cudaMalloc((void **)&input_buffer_,  get_dim_size(input_dims)* sizeof(float));
 
+    // Compliant with enqueueV3 API
     context_->setInputTensorAddress("images", input_buffer_);
     context_->setTensorAddress("num_dets", output_buffer_.num_dets);
     context_->setTensorAddress("det_boxes", output_buffer_.bboxes);
@@ -68,6 +78,10 @@ namespace irm_detection
     context_->setTensorAddress("det_classes", output_buffer_.labels);
 
     cudaStreamCreate(&stream_);
+    // Code below comes from https://github.com/JaapSuter/npp_context_repro/blob/56a7aec8b0b71129d6090cdaea3f27f8fd45a2b9/main.cpp#L37C1-L40C6
+    // Currently NPP documentation does not mention anything about the use of NppStreamContext.
+    nppGetStreamContext(&npp_context_);
+    npp_context_.hStream = stream_;
 
     enable_profiling_ = enable_profiling;
   }
@@ -75,6 +89,9 @@ namespace irm_detection
   YoloEngine::~YoloEngine()
   {
     cudaStreamDestroy(stream_);
+    cudaFree(rotated_image_buffer_);
+    cudaFree(resized_image_buffer_);
+    cudaFree(input_buffer_hwc_);
     cudaFree(input_buffer_);
     cudaFree(output_buffer_.num_dets);
     cudaFree(output_buffer_.bboxes);
@@ -103,44 +120,51 @@ namespace irm_detection
 
   std::vector<YoloEngine::bbox> YoloEngine::detect(const cv::Mat &image)
   {
-    std::chrono::system_clock::time_point preprocess_start, preprocess_end, inference_start, inference_end;
+    if (image.cols != image_input_size_.width || image.rows != image_input_size_.height) {
+      std::cout << "[ERR] YOLOEngine: Input image size does not match the input size specified in the constructor." << std::endl; // TODO: use ROS logger
+      exit(0);
+    }
+
+    std::chrono::system_clock::time_point preprocess_start, inference_end;
     if (enable_profiling_) {
       preprocess_start = std::chrono::high_resolution_clock::now();
     }
-    cv::Mat preprocessed_image(640, 640, CV_32FC3);
-    // Preprocess image [host side]
-    preprocess(image, preprocessed_image);
-    float scale_x = static_cast<float>(image.cols) / 640;
-    float scale_y = static_cast<float>(image.rows) / 640;
-    if (enable_profiling_) {
-      preprocess_end = std::chrono::high_resolution_clock::now();
-      preprocess_time_ =  std::chrono::duration_cast<std::chrono::microseconds>(preprocess_end - preprocess_start).count() / 1000.0;
-    }
-
-    // Copy image to input buffer
-    if (enable_profiling_) {
-      inference_start = std::chrono::high_resolution_clock::now();
-    }
-    cudaMemcpyAsync(input_buffer_, preprocessed_image.ptr(), preprocessed_image.total() * preprocessed_image.elemSize(), cudaMemcpyDefault, stream_);
+    // Preprocess image [device side]
+    preprocess(image);
+    // Below computation will overlap with GPU computation
+    float scale_x = static_cast<float>(image_input_size_.width) / 640;
+    float scale_y = static_cast<float>(image_input_size_.height) / 640;
 
     // Inference [device side]
     context_->enqueueV3(stream_);
     cudaStreamSynchronize(stream_);
     if (enable_profiling_) {
       inference_end = std::chrono::high_resolution_clock::now();
-      inference_time_ = std::chrono::duration_cast<std::chrono::microseconds>(inference_end - inference_start).count() / 1000.0;
+      inference_time_ = std::chrono::duration_cast<std::chrono::microseconds>(inference_end - preprocess_start).count() / 1000.0;
     }
 
+    // Parse output [host side]
+    // This computation is very fast on CPU
     std::vector<bbox> bboxes;
     bboxes = parse_output(scale_x, scale_y);
 
-    // Parse output [host side]
     return bboxes;
   }
 
-  void YoloEngine::preprocess(const cv::Mat &image, cv::Mat &preprocessed_image)
+  void YoloEngine::preprocess(const cv::Mat &image)
   {
-    cv::dnn::blobFromImage(image, preprocessed_image, 1.0 / 255.0, cv::Size(640, 640), cv::Scalar(0, 0, 0), true, false, CV_32F);
+    rotated_image_ = cv::Mat(cv::Size(image_input_size_.width, image_input_size_.height), CV_8UC3, rotated_image_buffer_);
+    cudaMemcpyAsync(rotated_image_buffer_, image.ptr(), image_input_size_.height * image_input_size_.width * 3, cudaMemcpyDefault, stream_);
+    // Rotate 180 degrees
+    nppiMirror_8u_C3IR_Ctx(rotated_image_buffer_, image_input_size_.width * 3, NppiSize{image_input_size_.width, image_input_size_.height}, NPP_BOTH_AXIS, npp_context_);
+    // Resize to 640x640
+    nppiResize_8u_C3R_Ctx(rotated_image_buffer_, image_input_size_.width * 3, NppiSize{image_input_size_.width, image_input_size_.height}, NppiRect{0, 0, image_input_size_.width, image_input_size_.height}, resized_image_buffer_, 640 * 3, NppiSize{640, 640}, NppiRect{0, 0, 640, 640}, NPPI_INTER_LINEAR, npp_context_);
+    // Convert to float and remap values from [0, 255] to [0.0, 1.0] (normalize)
+    nppiScale_8u32f_C3R_Ctx(resized_image_buffer_, 640 * 3, input_buffer_hwc_, 640 * 3 * sizeof(float), NppiSize{640, 640}, 0.0, 1.0, npp_context_);
+    // Convert HWC to CHW
+    // TODO: I can't find NPP function to do this conversion directly, below is a workaround using NPP Packed To Planar Channel Copy
+    static Npp32f * const aDst[3] = {input_buffer_, input_buffer_ + 640 * 640, input_buffer_ + 640 * 640 * 2};
+    nppiCopy_32f_C3P3R_Ctx(input_buffer_hwc_, 640 * 3 * sizeof(float), aDst, 640 * sizeof(float), NppiSize{640, 640}, npp_context_);
   }
 
   std::vector<YoloEngine::bbox> YoloEngine::parse_output(float scale_x, float scale_y)
@@ -170,9 +194,9 @@ namespace irm_detection
       cv::Point p2(bbox.xyxy[2], bbox.xyxy[3]);
       cv::Scalar color;
       if (magic_enum::enum_name(bbox.class_id)[0] == 'B') {
-        color = cv::Scalar(255, 0, 0);
-      } else {
         color = cv::Scalar(0, 0, 255);
+      } else {
+        color = cv::Scalar(255, 0, 0);
       }
       cv::rectangle(image, p1, p2, color, 2);
       cv::putText(image, std::string(magic_enum::enum_name(bbox.class_id)), p1, cv::FONT_HERSHEY_SIMPLEX, 1, color, 2);
