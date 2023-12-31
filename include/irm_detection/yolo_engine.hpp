@@ -56,7 +56,7 @@ namespace irm_detection
       cv::Mat rotated_image_;
       cv::Size image_input_size_;
 
-      // TensorRT related
+      // TensorRT and NPP related
       IRuntime *runtime_;
       ICudaEngine *engine_;
       IExecutionContext *context_;

@@ -40,9 +40,9 @@ namespace irm_detection
       rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_event_handle_;
 
       // Parameters
-      bool enable_debug_;
-      bool enable_profiling_;
-      int binary_threshold_;
+      bool enable_debug_; // This publishes visualized image and profiling data
+      bool enable_profiling_; // This publishes profiling data (always enabled if enable_debug_ is true)
+      int binary_threshold_; // Binary threshold for thresholding the image during armor extraction
       int enemy_color_;
       float light_min_ratio_;
       float light_max_ratio_;
@@ -53,12 +53,12 @@ namespace irm_detection
       float armor_max_large_center_distance_;
 
       // Debug & profiling
-      image_transport::Publisher visualized_img_pub_;
-      image_transport::Publisher binary_img_pub_;
-      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr total_latency_pub_;
-      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr comm_latency_pub_;
-      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr processing_latency_pub_;
-      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr inference_latency_pub_;
-      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pnp_latency_pub_;
+      image_transport::Publisher visualized_img_pub_; // Visualized image with bboxes and armors
+      image_transport::Publisher binary_img_pub_; // Binary image after thresholding
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr total_latency_pub_; // Total latency from image fetch to PnP estimation
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr comm_latency_pub_; // Communication latency from image fetch to callback start (this is caused by ROS2 communication, we can't do anything about it)
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr processing_latency_pub_; // Processing latency = total latency - communication latency
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr inference_latency_pub_; // Inference latency caused by YOLOEngine, this includes preprocessing, inference, and postprocessing
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pnp_latency_pub_; // PnP latency caused by PnPSolver
   };
 }

@@ -16,9 +16,6 @@
 
 using namespace nvinfer1;
 using namespace nvonnxparser;
-// #define NPP_CHECK_NPP(S) do {NppStatus eStatusNPP; \
-//         eStatusNPP = S; \
-//         if (eStatusNPP != NPP_SUCCESS) std::cout << "NPP_CHECK_NPP - eStatusNPP = " << "("<< eStatusNPP << ")" << std::endl;;} while (false)
 
 namespace irm_detection
 {
@@ -138,15 +135,15 @@ namespace irm_detection
     // Inference [device side]
     context_->enqueueV3(stream_);
     cudaStreamSynchronize(stream_);
-    if (enable_profiling_) {
-      inference_end = std::chrono::high_resolution_clock::now();
-      inference_time_ = std::chrono::duration_cast<std::chrono::microseconds>(inference_end - preprocess_start).count() / 1000.0;
-    }
 
     // Parse output [host side]
     // This computation is very fast on CPU
     std::vector<bbox> bboxes;
     bboxes = parse_output(scale_x, scale_y);
+    if (enable_profiling_) {
+      inference_end = std::chrono::high_resolution_clock::now();
+      inference_time_ = std::chrono::duration_cast<std::chrono::microseconds>(inference_end - preprocess_start).count() / 1000.0;
+    }
 
     return bboxes;
   }

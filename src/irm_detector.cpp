@@ -29,7 +29,7 @@ namespace irm_detection
       "/image/camera_info", rclcpp::SensorDataQoS(),
       [this](const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
         pnp_solver_ = std::make_unique<PnPSolver>(msg->k, msg->d);
-        camera_info_sub_.reset(); // Unsubscribe
+        camera_info_sub_.reset(); // Unsubscribe, we don't need it anymore
       });
 
     // Handle parameter changes
@@ -168,6 +168,7 @@ namespace irm_detection
 
     #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_) {
+      // Publish profiling data
       const auto inference_time = yolo_engine_->get_profiling_time();
       std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, processing_latency_msg, inference_latency_msg, pnp_latency_msg;
       total_latency_msg.data = (pnp_end_time - msg->header.stamp).seconds() * 1000;
