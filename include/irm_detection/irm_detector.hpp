@@ -57,7 +57,7 @@ namespace irm_detection
       image_transport::Publisher binary_img_pub_;
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr total_latency_pub_;
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr comm_latency_pub_;
-      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr preprocess_latency_pub_;
+      rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr processing_latency_pub_;
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr inference_latency_pub_;
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pnp_latency_pub_;
   };

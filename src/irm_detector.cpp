@@ -41,7 +41,7 @@ namespace irm_detection
     if (enable_profiling_) {
       total_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/detector/total_latency", rclcpp::SystemDefaultsQoS());
       comm_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/detector/comm_latency", rclcpp::SystemDefaultsQoS());
-      preprocess_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/yolo_engine/preprocess_latency", rclcpp::SystemDefaultsQoS());
+      processing_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/detector/processing_latency", rclcpp::SystemDefaultsQoS());
       inference_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/yolo_engine/inference_latency", rclcpp::SystemDefaultsQoS());
       pnp_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>("/pnp_solver/pnp_latency", rclcpp::SystemDefaultsQoS());
     }
@@ -168,14 +168,14 @@ namespace irm_detection
 
     #if ALLOW_DEBUG_AND_PROFILING
     if (enable_profiling_) {
-      const auto [preprocess_time, inference_time] = yolo_engine_->get_profiling_time();
-      std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, preprocess_latency_msg, inference_latency_msg, pnp_latency_msg;
+      const auto inference_time = yolo_engine_->get_profiling_time();
+      std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, processing_latency_msg, inference_latency_msg, pnp_latency_msg;
       total_latency_msg.data = (pnp_end_time - msg->header.stamp).seconds() * 1000;
       total_latency_pub_->publish(total_latency_msg);
       comm_latency_msg.data = (callback_start_time - msg->header.stamp).seconds() * 1000;
       comm_latency_pub_->publish(comm_latency_msg);
-      preprocess_latency_msg.data = preprocess_time;
-      preprocess_latency_pub_->publish(preprocess_latency_msg);
+      processing_latency_msg.data = total_latency_msg.data - comm_latency_msg.data;
+      processing_latency_pub_->publish(processing_latency_msg);
       inference_latency_msg.data = inference_time;
       inference_latency_pub_->publish(inference_latency_msg);
       pnp_latency_msg.data = (pnp_end_time - extraction_end_time).seconds() * 1000;

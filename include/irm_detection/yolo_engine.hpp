@@ -38,11 +38,11 @@ namespace irm_detection
       ~YoloEngine();
       std::vector<bbox> detect(const cv::Mat &image);
       void visualize_bboxes(cv::Mat &image, const std::vector<bbox> &bboxes);
-      std::tuple<float, float> get_profiling_time() const
+      float get_profiling_time() const
       {
-        return std::make_tuple(preprocess_time_, inference_time_);
+        return inference_time_;
       }
-      const cv::Mat & get_rotated_image()
+      const cv::Mat & get_rotated_image() const
       {
         return rotated_image_;
       }
