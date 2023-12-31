@@ -7,6 +7,7 @@
 
 #include "NvInfer.h"
 #include "opencv2/opencv.hpp"
+#include "rclcpp/rclcpp.hpp"
 #include "irm_detection/armor.hpp"
 #include "npp.h"
 
@@ -34,7 +35,7 @@ namespace irm_detection
         }
       };
 
-      YoloEngine(const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling = false);
+      YoloEngine(rclcpp::Node::ConstSharedPtr node, const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling = false);
       ~YoloEngine();
       std::vector<bbox> detect(const cv::Mat &image);
       void visualize_bboxes(cv::Mat &image, const std::vector<bbox> &bboxes);
@@ -51,6 +52,8 @@ namespace irm_detection
       void load_engine_file(const std::string &engine_file_path);
       void preprocess(const cv::Mat &image);
       std::vector<bbox> parse_output(float scale_x, float scale_y);
+
+      rclcpp::Node::ConstSharedPtr node_;
 
       // OpenCV related
       cv::Mat rotated_image_;

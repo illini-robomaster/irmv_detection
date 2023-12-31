@@ -22,7 +22,7 @@ namespace irm_detection
     declare_parameters();
 
     // Initialize YOLO engine
-    yolo_engine_ = std::make_unique<YoloEngine>("/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx", cv::Size(1280, 1024), enable_profiling_);
+    yolo_engine_ = std::make_unique<YoloEngine>(node_, "/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx", image_input_size_, enable_profiling_);
 
     // Initialize PnP solver
     camera_info_sub_ = node_->create_subscription<sensor_msgs::msg::CameraInfo>(
@@ -66,6 +66,11 @@ namespace irm_detection
     enable_profiling_ = node_->declare_parameter<bool>("profiling", false, param_desc);
     if (enable_debug_) enable_profiling_ = true;
 
+    param_desc.description = "Input size of the YOLO model";
+    param_desc.additional_constraints = "Must be a list of two integers";
+    auto image_input_size = node_->declare_parameter<std::vector<long>>("image_input_size", std::vector<long>{1280, 1024}, param_desc);
+    image_input_size_ = cv::Size(image_input_size[0], image_input_size[1]);
+
     param_desc.description = "Binary threshold for light extraction";
     param_desc.additional_constraints = "Must be an integer ranging from 0 to 255";
     param_desc.integer_range.resize(1);
@@ -106,22 +111,6 @@ namespace irm_detection
     std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(cv_ptr->image);
 
     std::vector<Armor> armors = extract_armors(yolo_engine_->get_rotated_image(), bboxes);
-
-    #if ALLOW_DEBUG_AND_PROFILING
-    if (enable_debug_) {
-      cv::Mat visualized_image = yolo_engine_->get_rotated_image().clone();
-      visualize_armors(visualized_image, armors);
-      yolo_engine_->visualize_bboxes(visualized_image, bboxes);
-      visualized_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", visualized_image).toImageMsg());
-
-      cv::Mat binary_image = yolo_engine_->get_rotated_image().clone();
-      cv::cvtColor(binary_image, binary_image, cv::COLOR_BGR2GRAY);
-      cv::threshold(binary_image, binary_image, binary_threshold_, 255, cv::THRESH_BINARY);
-      cv::cvtColor(binary_image, binary_image, cv::COLOR_GRAY2BGR);
-      yolo_engine_->visualize_bboxes(binary_image, bboxes);
-      binary_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", binary_image).toImageMsg());
-    }
-    #endif
 
     if (pnp_solver_ == nullptr) return; // This could happen if camera_info topic is not received yet
 
@@ -181,6 +170,23 @@ namespace irm_detection
       inference_latency_pub_->publish(inference_latency_msg);
       pnp_latency_msg.data = (pnp_end_time - extraction_end_time).seconds() * 1000;
       pnp_latency_pub_->publish(pnp_latency_msg);
+      // Publish debug images
+      if (enable_debug_) {
+        cv::Mat visualized_image = yolo_engine_->get_rotated_image().clone();
+        visualize_armors(visualized_image, armors);
+        yolo_engine_->visualize_bboxes(visualized_image, bboxes);
+        cv::putText(visualized_image, "Total latency: " + std::to_string(total_latency_msg.data) + " ms", cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+        cv::putText(visualized_image, "Comm latency: " + std::to_string(comm_latency_msg.data) + " ms", cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+        cv::putText(visualized_image, "Processing latency: " + std::to_string(processing_latency_msg.data) + " ms", cv::Point(10, 90), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
+        visualized_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", visualized_image).toImageMsg());
+
+        cv::Mat binary_image = yolo_engine_->get_rotated_image().clone();
+        cv::cvtColor(binary_image, binary_image, cv::COLOR_BGR2GRAY);
+        cv::threshold(binary_image, binary_image, binary_threshold_, 255, cv::THRESH_BINARY);
+        cv::cvtColor(binary_image, binary_image, cv::COLOR_GRAY2BGR);
+        yolo_engine_->visualize_bboxes(binary_image, bboxes);
+        binary_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", binary_image).toImageMsg());
+      }
     }
     #endif
   }

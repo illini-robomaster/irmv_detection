@@ -23,7 +23,7 @@ namespace irm_detection
 
   namespace fs = std::filesystem;
 
-  YoloEngine::YoloEngine(const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling) : image_input_size_(image_input_size)
+  YoloEngine::YoloEngine(rclcpp::Node::ConstSharedPtr node, const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling) : node_(node), image_input_size_(image_input_size)
   {
     fs::path onnx_file(onnx_file_path);
     fs::path engine_file(onnx_file);
@@ -118,7 +118,15 @@ namespace irm_detection
   std::vector<YoloEngine::bbox> YoloEngine::detect(const cv::Mat &image)
   {
     if (image.cols != image_input_size_.width || image.rows != image_input_size_.height) {
-      std::cout << "[ERR] YOLOEngine: Input image size does not match the input size specified in the constructor." << std::endl; // TODO: use ROS logger
+      if (node_ != nullptr)
+        RCLCPP_ERROR(node_->get_logger(), 
+        "YOLOEngine: Input image size does not match the input size specified in the constructor.\n\
+        Input image size: %dx%d\n\
+        Input size specified in the constructor: %dx%d", image.cols, image.rows, image_input_size_.width, image_input_size_.height);
+      else
+        std::cout << "YOLOEngine: Input image size does not match the input size specified in the constructor.\n\
+        Input image size: " << image.cols << "x" << image.rows << "\n\
+        Input size specified in the constructor: " << image_input_size_.width << "x" << image_input_size_.height << std::endl;
       exit(0);
     }
 

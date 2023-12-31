@@ -51,6 +51,7 @@ namespace irm_detection
       float armor_max_small_center_distance_;
       float armor_min_large_center_distance_;
       float armor_max_large_center_distance_;
+      cv::Size image_input_size_; // Input size of the YOLO model
 
       // Debug & profiling
       image_transport::Publisher visualized_img_pub_; // Visualized image with bboxes and armors
