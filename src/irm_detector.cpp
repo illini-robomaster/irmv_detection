@@ -49,6 +49,29 @@ namespace irm_detection
       binary_img_pub_ = image_transport::create_publisher(node_.get(), "/image/binary_image", rmw_qos_profile_sensor_data);
       visualized_img_pub_ = image_transport::create_publisher(node_.get(), "/image/visualized_image", rmw_qos_profile_sensor_data);
     }
+    if (enable_rviz_) {
+      armor_marker_.ns = "armor";
+      armor_marker_.action = visualization_msgs::msg::Marker::ADD;
+      armor_marker_.type = visualization_msgs::msg::Marker::CUBE;
+      armor_marker_.scale.x = 0.05;
+      armor_marker_.scale.z = 0.125;
+      armor_marker_.color.a = 1.0;
+      armor_marker_.color.g = 0.5;
+      armor_marker_.color.b = 1.0;
+      armor_marker_.lifetime = rclcpp::Duration::from_seconds(0.1);
+
+      text_marker_.ns = "classification";
+      text_marker_.action = visualization_msgs::msg::Marker::ADD;
+      text_marker_.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      text_marker_.scale.z = 0.1;
+      text_marker_.color.a = 1.0;
+      text_marker_.color.r = 1.0;
+      text_marker_.color.g = 1.0;
+      text_marker_.color.b = 1.0;
+      text_marker_.lifetime = rclcpp::Duration::from_seconds(0.1);
+
+      marker_array_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/detector/marker", 10);
+    }
     #endif
     img_sub_ = image_transport::create_subscription(node_.get(), "/image/image_raw", std::bind(&IrmDetector::message_callback, this, std::placeholders::_1), "raw", rmw_qos_profile_sensor_data);
   }
@@ -65,6 +88,11 @@ namespace irm_detection
     param_desc.additional_constraints = "Must be true or false";
     enable_profiling_ = node_->declare_parameter<bool>("profiling", false, param_desc);
     if (enable_debug_) enable_profiling_ = true;
+
+    param_desc.description = "Enable Rviz visualization";
+    param_desc.additional_constraints = "Must be true or false";
+    enable_rviz_ = node_->declare_parameter<bool>("enable_rviz", false, param_desc);
+    if (enable_debug_) enable_rviz_ = true;
 
     param_desc.description = "Input size of the YOLO model";
     param_desc.additional_constraints = "Must be a list of two integers";
@@ -120,6 +148,13 @@ namespace irm_detection
     #endif
 
     auto_aim_interfaces::msg::Armors armors_msg;
+    armors_msg.header = msg->header;
+    if (enable_rviz_) {
+      armor_marker_.header = msg->header;
+      text_marker_.header = msg->header;
+      armor_marker_.id = 0;
+      text_marker_.id = 0;
+    }
     for (const auto &armor : armors) {
       cv::Mat rvec, tvec;
       if (!pnp_solver_->solvePnP(armor, rvec, tvec)) {
@@ -146,6 +181,18 @@ namespace irm_detection
       // Fill in message
       armor_msg.distance_to_image_center = pnp_solver_->calculateDistanceToCenter(armor.center);
       armors_msg.armors.emplace_back(armor_msg);
+
+      if (enable_rviz_) {
+        armor_marker_.id++;
+        armor_marker_.pose = armor_msg.pose;
+        armor_marker_.scale.y = armor.size == ArmorSize::SMALL ? 0.135 : 0.23;
+        text_marker_.id++;
+        text_marker_.pose.position = armor_msg.pose.position;
+        text_marker_.pose.position.y -= 0.1;
+        text_marker_.text = magic_enum::enum_name(armor.armor_class);
+        marker_array_.markers.push_back(armor_marker_);
+        marker_array_.markers.push_back(text_marker_);
+      }
     }
 
     armors_pub_->publish(armors_msg);
@@ -187,6 +234,12 @@ namespace irm_detection
         yolo_engine_->visualize_bboxes(binary_image, bboxes);
         binary_img_pub_.publish(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", binary_image).toImageMsg());
       }
+    }
+    if (enable_rviz_) {
+      armor_marker_.action = armors_msg.armors.empty() ? visualization_msgs::msg::Marker::DELETE : visualization_msgs::msg::Marker::ADD;
+      marker_array_.markers.push_back(armor_marker_);
+      marker_array_pub_->publish(marker_array_);
+      marker_array_.markers.clear();
     }
     #endif
   }

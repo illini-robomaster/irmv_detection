@@ -9,6 +9,7 @@
 #include "std_msgs/msg/float64.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include "image_transport/image_transport.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 #include "auto_aim_interfaces/msg/armors.hpp"
 #include <memory>
 
@@ -42,6 +43,7 @@ namespace irm_detection
       // Parameters
       bool enable_debug_; // This publishes visualized image and profiling data
       bool enable_profiling_; // This publishes profiling data (always enabled if enable_debug_ is true)
+      bool enable_rviz_; // This publishes armor markers for visualization in Rviz
       int binary_threshold_; // Binary threshold for thresholding the image during armor extraction
       int enemy_color_;
       float light_min_ratio_;
@@ -61,5 +63,11 @@ namespace irm_detection
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr processing_latency_pub_; // Processing latency = total latency - communication latency
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr inference_latency_pub_; // Inference latency caused by YOLOEngine, this includes preprocessing, inference, and postprocessing
       rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pnp_latency_pub_; // PnP latency caused by PnPSolver
+
+      // Rviz visualization
+      visualization_msgs::msg::Marker armor_marker_;
+      visualization_msgs::msg::Marker text_marker_;
+      visualization_msgs::msg::MarkerArray marker_array_;
+      rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
   };
 }
