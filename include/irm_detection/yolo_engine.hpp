@@ -10,6 +10,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "irm_detection/armor.hpp"
 #include "npp.h"
+#include "cuda_runtime.h"
 
 using namespace nvinfer1;
 
@@ -50,7 +51,7 @@ namespace irm_detection
 
     private:
       void load_engine_file(const std::string &engine_file_path);
-      void preprocess(const cv::Mat &image);
+      void preprocess();
       std::vector<bbox> parse_output(float scale_x, float scale_y);
 
       rclcpp::Node::ConstSharedPtr node_;
@@ -75,6 +76,9 @@ namespace irm_detection
         float *scores;
         int32_t *labels;
       } output_buffer_;
+      cudaGraph_t graph_;
+      cudaGraphExec_t graph_exec_;
+      Npp32f * aDst_[3] = {nullptr, nullptr, nullptr};
 
       // Configurations
       bool enable_profiling_ = false;

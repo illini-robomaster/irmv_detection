@@ -23,7 +23,7 @@ namespace irm_detection
 
   namespace fs = std::filesystem;
 
-  YoloEngine::YoloEngine(rclcpp::Node::ConstSharedPtr node, const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling) : node_(node), image_input_size_(image_input_size)
+  YoloEngine::YoloEngine(rclcpp::Node::ConstSharedPtr node, const std::string &onnx_file_path, cv::Size image_input_size, bool enable_profiling) : node_(node), image_input_size_(image_input_size), enable_profiling_(enable_profiling)
   {
     fs::path onnx_file(onnx_file_path);
     fs::path engine_file(onnx_file);
@@ -67,6 +67,8 @@ namespace irm_detection
     cudaMalloc((void **)&input_buffer_hwc_, get_dim_size(input_dims) * sizeof(float));
     cudaMalloc((void **)&input_buffer_,  get_dim_size(input_dims)* sizeof(float));
 
+    rotated_image_ = cv::Mat(cv::Size(image_input_size_.width, image_input_size_.height), CV_8UC3, rotated_image_buffer_);
+
     // Compliant with enqueueV3 API
     context_->setInputTensorAddress("images", input_buffer_);
     context_->setTensorAddress("num_dets", output_buffer_.num_dets);
@@ -80,7 +82,17 @@ namespace irm_detection
     nppGetStreamContext(&npp_context_);
     npp_context_.hStream = stream_;
 
-    enable_profiling_ = enable_profiling;
+    // Create CUDA graph
+    aDst_[0] = input_buffer_;
+    aDst_[1] = input_buffer_ + 640 * 640;
+    aDst_[2] = input_buffer_ + 640 * 640 * 2;
+    // context_->enqueueV3(stream_); // Update internal state, see https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#cuda-graphs
+    // cudaGraphCreate(&graph_, 0);
+    // cudaStreamBeginCapture(stream_, cudaStreamCaptureModeGlobal);
+    // preprocess();
+    // context_->enqueueV3(stream_);
+    // cudaStreamEndCapture(stream_, &graph_);
+    // cudaGraphInstantiate(&graph_exec_, graph_, 0);
   }
 
   YoloEngine::~YoloEngine()
@@ -117,6 +129,8 @@ namespace irm_detection
 
   std::vector<YoloEngine::bbox> YoloEngine::detect(const cv::Mat &image)
   {
+    static const float scale_x = static_cast<float>(image_input_size_.width) / 640;
+    static const float scale_y = static_cast<float>(image_input_size_.height) / 640;
     if (image.cols != image_input_size_.width || image.rows != image_input_size_.height) {
       if (node_ != nullptr)
         RCLCPP_ERROR(node_->get_logger(), 
@@ -135,10 +149,8 @@ namespace irm_detection
       preprocess_start = std::chrono::high_resolution_clock::now();
     }
     // Preprocess image [device side]
-    preprocess(image);
-    // Below computation will overlap with GPU computation
-    float scale_x = static_cast<float>(image_input_size_.width) / 640;
-    float scale_y = static_cast<float>(image_input_size_.height) / 640;
+    cudaMemcpyAsync(rotated_image_buffer_, image.ptr(), image_input_size_.height * image_input_size_.width * 3, cudaMemcpyDefault, stream_);
+    preprocess();
 
     // Inference [device side]
     context_->enqueueV3(stream_);
@@ -156,10 +168,8 @@ namespace irm_detection
     return bboxes;
   }
 
-  void YoloEngine::preprocess(const cv::Mat &image)
+  void YoloEngine::preprocess()
   {
-    rotated_image_ = cv::Mat(cv::Size(image_input_size_.width, image_input_size_.height), CV_8UC3, rotated_image_buffer_);
-    cudaMemcpyAsync(rotated_image_buffer_, image.ptr(), image_input_size_.height * image_input_size_.width * 3, cudaMemcpyDefault, stream_);
     // Rotate 180 degrees
     nppiMirror_8u_C3IR_Ctx(rotated_image_buffer_, image_input_size_.width * 3, NppiSize{image_input_size_.width, image_input_size_.height}, NPP_BOTH_AXIS, npp_context_);
     // Resize to 640x640
@@ -168,8 +178,7 @@ namespace irm_detection
     nppiScale_8u32f_C3R_Ctx(resized_image_buffer_, 640 * 3, input_buffer_hwc_, 640 * 3 * sizeof(float), NppiSize{640, 640}, 0.0, 1.0, npp_context_);
     // Convert HWC to CHW
     // TODO: I can't find NPP function to do this conversion directly, below is a workaround using NPP Packed To Planar Channel Copy
-    static Npp32f * const aDst[3] = {input_buffer_, input_buffer_ + 640 * 640, input_buffer_ + 640 * 640 * 2};
-    nppiCopy_32f_C3P3R_Ctx(input_buffer_hwc_, 640 * 3 * sizeof(float), aDst, 640 * sizeof(float), NppiSize{640, 640}, npp_context_);
+    nppiCopy_32f_C3P3R_Ctx(input_buffer_hwc_, 640 * 3 * sizeof(float), aDst_, 640 * sizeof(float), NppiSize{640, 640}, npp_context_);
   }
 
   std::vector<YoloEngine::bbox> YoloEngine::parse_output(float scale_x, float scale_y)
