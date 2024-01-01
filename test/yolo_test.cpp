@@ -71,9 +71,14 @@ TEST(irm_detection, yolo_engine_benchmark)
 
   float inference_time = 0.0;
 
+  // Warmpup
+  for (int i = 0; i < 100; i++) {
+    std::vector<irm_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
+  }
+
   std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 5000; i++) {
     std::vector<irm_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
     auto inference_time_ = yolo_engine.get_profiling_time();
     inference_time += inference_time_;
@@ -81,10 +86,10 @@ TEST(irm_detection, yolo_engine_benchmark)
 
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 
-  float avg_time = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 1000.0;
+  float avg_time = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() / 5000.0;
 
   std::cout << "Average detection time: " << avg_time << " ms" << std::endl;
-  std::cout << "Average inference time: " << inference_time / 1000.0 << " ms" << std::endl;
+  std::cout << "Average inference time: " << inference_time / 5000.0 << " ms" << std::endl;
   // A detection time larger than 30 ms generally means very bad performance.
   ASSERT_LT(avg_time, 30);
 }
