@@ -86,18 +86,20 @@ namespace irm_detection
     aDst_[0] = input_buffer_;
     aDst_[1] = input_buffer_ + 640 * 640;
     aDst_[2] = input_buffer_ + 640 * 640 * 2;
-    // context_->enqueueV3(stream_); // Update internal state, see https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#cuda-graphs
-    // cudaGraphCreate(&graph_, 0);
-    // cudaStreamBeginCapture(stream_, cudaStreamCaptureModeGlobal);
-    // preprocess();
-    // context_->enqueueV3(stream_);
-    // cudaStreamEndCapture(stream_, &graph_);
-    // cudaGraphInstantiate(&graph_exec_, graph_, 0);
+    context_->enqueueV3(stream_); // Update engine internal states (bindings etc.), see https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#cuda-graphs
+    cudaGraphCreate(&graph_, 0);
+    cudaStreamBeginCapture(stream_, cudaStreamCaptureModeGlobal);
+    preprocess();
+    context_->enqueueV3(stream_);
+    cudaStreamEndCapture(stream_, &graph_);
+    cudaGraphInstantiate(&graph_exec_, graph_, 0);
   }
 
   YoloEngine::~YoloEngine()
   {
     cudaStreamDestroy(stream_);
+    cudaGraphExecDestroy(graph_exec_);
+    cudaGraphDestroy(graph_);
     cudaFree(rotated_image_buffer_);
     cudaFree(resized_image_buffer_);
     cudaFree(input_buffer_hwc_);
@@ -148,12 +150,9 @@ namespace irm_detection
     if (enable_profiling_) {
       preprocess_start = std::chrono::high_resolution_clock::now();
     }
-    // Preprocess image [device side]
+    // Preprocess & Inference [device side]
     cudaMemcpyAsync(rotated_image_buffer_, image.ptr(), image_input_size_.height * image_input_size_.width * 3, cudaMemcpyDefault, stream_);
-    preprocess();
-
-    // Inference [device side]
-    context_->enqueueV3(stream_);
+    cudaGraphLaunch(graph_exec_, stream_);
     cudaStreamSynchronize(stream_);
 
     // Parse output [host side]
