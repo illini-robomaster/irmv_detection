@@ -24,6 +24,12 @@ namespace irm_detection
     // Initialize YOLO engine
     yolo_engine_ = std::make_unique<YoloEngine>(node_, "/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx", image_input_size_, enable_profiling_);
 
+    // Warmup
+    cv::Mat dummy_image = cv::Mat::zeros(image_input_size_, CV_8UC3);
+    for (int i = 0; i < 100; i++) {
+      yolo_engine_->detect(dummy_image);
+    }
+
     // Initialize PnP solver
     camera_info_sub_ = node_->create_subscription<sensor_msgs::msg::CameraInfo>(
       "/image/camera_info", rclcpp::SensorDataQoS(),
