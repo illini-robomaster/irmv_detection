@@ -1,5 +1,5 @@
-#include "irm_detection/yolo_engine.hpp"
-#include "irm_detection/trt_logger.hpp"
+#include "irmv_detection/yolo_engine.hpp"
+#include "irmv_detection/trt_logger.hpp"
 
 #include <chrono>
 #include <memory>
@@ -12,12 +12,12 @@
 #include "NvOnnxParser.h"
 #include "NvInferPlugin.h"
 #include "opencv2/opencv.hpp"
-#include "irm_detection/magic_enum.hpp"
+#include "irmv_detection/magic_enum.hpp"
 
 using namespace nvinfer1;
 using namespace nvonnxparser;
 
-namespace irm_detection
+namespace irmv_detection
 {
   static Logger gLogger;
 
@@ -200,7 +200,7 @@ namespace irm_detection
     return bboxes;
   }
 
-  void YoloEngine::visualize_bboxes(cv::Mat &image, const std::vector<irm_detection::YoloEngine::bbox> &bboxes)
+  void YoloEngine::visualize_bboxes(cv::Mat &image, const std::vector<irmv_detection::YoloEngine::bbox> &bboxes)
   {
     for (auto &bbox : bboxes) {
       cv::Point p1(bbox.xyxy[0], bbox.xyxy[1]);
@@ -216,4 +216,4 @@ namespace irm_detection
     }
   }
 
-}  // namespace irm_detection
+}  // namespace irmv_detection

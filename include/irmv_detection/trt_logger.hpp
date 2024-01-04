@@ -5,7 +5,7 @@
 
 using namespace nvinfer1;
 
-namespace irm_detection
+namespace irmv_detection
 {
   class Logger : public ILogger
   {

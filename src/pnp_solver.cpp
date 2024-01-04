@@ -1,8 +1,8 @@
-#include "irm_detection/pnp_solver.hpp"
+#include "irmv_detection/pnp_solver.hpp"
 
 #include <vector>
 
-namespace irm_detection
+namespace irmv_detection
 {
 PnPSolver::PnPSolver(
   const std::array<double, 9> & camera_matrix, const std::vector<double> & dist_coeffs)

@@ -8,13 +8,13 @@
 #include "NvInfer.h"
 #include "opencv2/opencv.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "irm_detection/armor.hpp"
+#include "irmv_detection/armor.hpp"
 #include "npp.h"
 #include "cuda_runtime.h"
 
 using namespace nvinfer1;
 
-namespace irm_detection
+namespace irmv_detection
 {
   class YoloEngine
   {

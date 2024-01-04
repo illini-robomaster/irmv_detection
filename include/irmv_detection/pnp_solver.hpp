@@ -3,10 +3,10 @@
 #include <array>
 #include <vector>
 
-#include "irm_detection/armor.hpp"
+#include "irmv_detection/armor.hpp"
 #include "opencv2/opencv.hpp"
 
-namespace irm_detection
+namespace irmv_detection
 {
 class PnPSolver
 {
@@ -37,4 +37,4 @@ private:
   std::vector<cv::Point3f> large_armor_points_;
 };
 
-}  // namespace irm_detection
+}  // namespace irmv_detection

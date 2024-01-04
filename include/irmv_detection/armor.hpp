@@ -2,7 +2,7 @@
 
 #include "opencv2/opencv.hpp"
 
-namespace irm_detection
+namespace irmv_detection
 {
   enum class ArmorClass
   {

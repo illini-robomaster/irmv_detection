@@ -1,4 +1,4 @@
-#include "irm_detection/irm_detector.hpp"
+#include "irmv_detection/irm_detector.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2/convert.h"
@@ -6,13 +6,13 @@
 #include <memory>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
-#include "irm_detection/armor.hpp"
-#include "irm_detection/magic_enum.hpp"
-#include "irm_detection/yolo_engine.hpp"
+#include "irmv_detection/armor.hpp"
+#include "irmv_detection/magic_enum.hpp"
+#include "irmv_detection/yolo_engine.hpp"
 
 #define ALLOW_DEBUG_AND_PROFILING 1
 
-namespace irm_detection
+namespace irmv_detection
 {
   IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   {
@@ -359,4 +359,4 @@ namespace irm_detection
 // Register the component with class_loader.
 // This acts as a sort of entry point, allowing the component to be discoverable when its library
 // is being loaded into a running process.
-RCLCPP_COMPONENTS_REGISTER_NODE(irm_detection::IrmDetector)
+RCLCPP_COMPONENTS_REGISTER_NODE(irmv_detection::IrmDetector)
