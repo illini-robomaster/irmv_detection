@@ -12,6 +12,7 @@ A hardware-accelerated (for NVIDIA GPUs) armor detection ROS2 node for RoboMaste
 | YOLOv8n <br> (Shufflenet backbone)** | 640x640 | ~5-6ms | ~ 3-4ms |
 
 *: The inference time includes the time for image preprocessing and postprocessing (NMS).
+
 **: https://github.com/zRzRzRzRzRzRzR/YOLO-of-RoboMaster-Keypoints-Detection-2023
 
 Note that due to use of Unified Memory, the performance on dGPU devices is not ideal. However this enables true zero-copy on Tegra (e.g. Jetson) devices, potentially reducing the latency of image transfer between CPU and GPU.
@@ -29,6 +30,7 @@ Below are techniques used or planned to use in this package to accelerate the in
 ## Troubleshooting
 
 1. Model inference taking much longer than expected.
+
    By default, NVIDIA GPUs will run at a low clock rate when the GPU is idle. This is not ideal for competition environment. To solve this problem, you can use the following command (on Jetson only) to set the GPU clock rate to the maximum value:
     ```bash
     sudo jetson_clocks

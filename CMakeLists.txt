@@ -39,6 +39,7 @@ ament_target_dependencies(irmv_detection
   auto_aim_interfaces
   tf2_geometry_msgs
   tf2
+  fmt
 )
 target_link_libraries(irmv_detection
   nvinfer

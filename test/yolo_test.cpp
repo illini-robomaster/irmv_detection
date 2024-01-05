@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 #include "irmv_detection/magic_enum.hpp"
 
 namespace fs = std::filesystem;
