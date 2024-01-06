@@ -28,6 +28,7 @@ ament_auto_add_library(irmv_detection SHARED
   src/irm_detector.cpp
   src/yolo_engine.cpp
   src/pnp_solver.cpp
+  src/camera.cpp
 )
 ament_target_dependencies(irmv_detection
   rclcpp
@@ -84,6 +85,20 @@ if(BUILD_TESTING)
     OpenCV
   )
   target_link_libraries(irmv_detection_yolo_test
+    irmv_detection
+  )
+  ament_add_gtest(irmv_detection_camera_test
+    test/camera_test.cpp
+  )
+  target_include_directories(irmv_detection_camera_test PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${CUDA_INCLUDE_DIRS}
+  )
+  ament_target_dependencies(irmv_detection_camera_test
+    OpenCV
+  )
+  target_link_libraries(irmv_detection_camera_test
     irmv_detection
   )
 endif()
