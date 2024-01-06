@@ -35,6 +35,7 @@ public:
   void visualize_bboxes(cv::Mat & image, const std::vector<bbox> & bboxes) const;
   double get_profiling_time() const { return inference_time_.count(); }
   const cv::Mat & get_rotated_image() const { return rotated_image_; }
+  uint8_t * get_src_image_buffer() const { return src_image_buffer_; }
 
 private:
   void load_engine_file(const std::string & engine_file_path);
@@ -53,7 +54,7 @@ private:
   IExecutionContext * context_;
   cudaStream_t stream_;
   NppStreamContext npp_context_;
-  uint8_t * rotated_image_buffer_;
+  uint8_t * src_image_buffer_;
   uint8_t * resized_image_buffer_;
   float * input_buffer_hwc_;
   float * input_buffer_;

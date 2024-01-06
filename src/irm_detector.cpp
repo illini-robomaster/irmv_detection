@@ -1,10 +1,14 @@
-#include <memory>
+#include <chrono>
+#include <cmath>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <camera_info_manager/camera_info_manager.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <fmt/format.h>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
+#include <rcl/time.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/convert.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -26,9 +30,10 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   declare_parameters();
 
   // Initialize YOLO engine
-  yolo_engine_ = std::make_unique<YoloEngine>(
-    node_, "/home/niceme/workspaces/irm_ros-dev/src/irmv_detection/models/yolov7.onnx",
-    image_input_size_, enable_profiling_);
+  auto model_path =
+    ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
+  yolo_engine_ =
+    std::make_unique<YoloEngine>(node_, model_path, image_input_size_, enable_profiling_);
 
   // Warmup
   cv::Mat dummy_image = cv::Mat::zeros(image_input_size_, CV_8UC3);
@@ -36,13 +41,17 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
     yolo_engine_->detect(dummy_image);
   }
 
-  // Initialize PnP solver
-  camera_info_sub_ = node_->create_subscription<sensor_msgs::msg::CameraInfo>(
-    "/image/camera_info", rclcpp::SensorDataQoS(),
-    [this](const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
-      pnp_solver_ = std::make_unique<PnPSolver>(msg->k, msg->d);
-      camera_info_sub_.reset();  // Unsubscribe, we don't need it anymore
-    });
+  auto camera_info_manager =
+    std::make_unique<camera_info_manager::CameraInfoManager>(node_.get(), "mv_camera");
+  auto camera_info_url = node_->declare_parameter(
+    "camera_info_url", std::string("package://irmv_detection/config/camera_info.yaml"));
+  if (!camera_info_manager->validateURL(camera_info_url)) {
+    RCLCPP_ERROR(node_->get_logger(), "Invalid camera info URL");
+    exit(0);
+  }
+  camera_info_manager->loadCameraInfo(camera_info_url);
+  auto camera_info_msg = camera_info_manager->getCameraInfo();
+  pnp_solver_ = std::make_unique<PnPSolver>(camera_info_msg.k, camera_info_msg.d);
 
   // Handle parameter changes
   param_event_handle_ = node_->add_on_set_parameters_callback(
@@ -54,9 +63,12 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   if constexpr (ALLOW_DEBUG_AND_PROFILING) {
     create_debug_publishers();
   }
-  img_sub_ = image_transport::create_subscription(
-    node_.get(), "/image/image_raw", std::bind_front(&IrmDetector::message_callback, this), "raw",
-    rmw_qos_profile_sensor_data);
+
+  // Initialize camera
+  camera_ = std::make_unique<VirtualCamera>(
+    "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
+    yolo_engine_->get_src_image_buffer(), 100);
+  camera_->set_camera_callback(std::bind_front(&IrmDetector::message_callback, this));
 }
 
 void IrmDetector::create_debug_publishers()
@@ -120,7 +132,7 @@ void IrmDetector::declare_parameters()
 
   param_desc.description = "Enable Rviz visualization";
   param_desc.additional_constraints = "Must be true or false";
-  enable_rviz_ = node_->declare_parameter<bool>("enable_rviz", false, param_desc);
+  enable_rviz_ = node_->declare_parameter<bool>("rviz", false, param_desc);
   if (enable_debug_) enable_rviz_ = true;
 
   param_desc.description = "Input size of the YOLO model";
@@ -159,17 +171,12 @@ void IrmDetector::declare_parameters()
     node_->declare_parameter<double>("armor.max_large_center_distance", 5.5);
 }
 
-void IrmDetector::message_callback(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
+void IrmDetector::message_callback(
+  cv::Mat & image, std::chrono::time_point<std::chrono::system_clock> time_stamp)
 {
-  rclcpp::Time callback_start_time, extraction_end_time, pnp_end_time;
+  rclcpp::Time extraction_end_time, pnp_end_time;
 
-  if constexpr (ALLOW_DEBUG_AND_PROFILING) {
-    if (enable_profiling_) callback_start_time = node_->now();
-  }
-
-  cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, "rgb8");
-
-  std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(cv_ptr->image);
+  std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(image);
 
   std::vector<Armor> armors = extract_armors(yolo_engine_->get_rotated_image(), bboxes);
 
@@ -179,14 +186,19 @@ void IrmDetector::message_callback(const sensor_msgs::msg::Image::ConstSharedPtr
     if (enable_profiling_) extraction_end_time = node_->now();
   }
 
+  rclcpp::Time time_stamp_ros(time_stamp.time_since_epoch().count(), RCL_ROS_TIME);
+  std_msgs::msg::Header header;
+  header.stamp = time_stamp_ros;
+  header.frame_id = "camera_optical_frame";
   auto_aim_interfaces::msg::Armors armors_msg;
-  armors_msg.header = msg->header;
+  armors_msg.header = header;
   if (enable_rviz_) {
-    armor_marker_.header = msg->header;
-    text_marker_.header = msg->header;
+    armor_marker_.header = header;
+    text_marker_.header = header;
     armor_marker_.id = 0;
     text_marker_.id = 0;
   }
+
   for (const auto & armor : armors) {
     cv::Mat rvec;
     cv::Mat tvec;
@@ -235,14 +247,9 @@ void IrmDetector::message_callback(const sensor_msgs::msg::Image::ConstSharedPtr
       pnp_end_time = node_->now();
       // Publish profiling data
       const auto inference_time = yolo_engine_->get_profiling_time();
-      std_msgs::msg::Float64 total_latency_msg, comm_latency_msg, processing_latency_msg,
-        inference_latency_msg, pnp_latency_msg;
-      total_latency_msg.data = (pnp_end_time - msg->header.stamp).seconds() * 1000;
+      std_msgs::msg::Float64 total_latency_msg, inference_latency_msg, pnp_latency_msg;
+      total_latency_msg.data = (pnp_end_time - time_stamp_ros).seconds() * 1000;
       total_latency_pub_->publish(total_latency_msg);
-      comm_latency_msg.data = (callback_start_time - msg->header.stamp).seconds() * 1000;
-      comm_latency_pub_->publish(comm_latency_msg);
-      processing_latency_msg.data = total_latency_msg.data - comm_latency_msg.data;
-      processing_latency_pub_->publish(processing_latency_msg);
       inference_latency_msg.data = inference_time;
       inference_latency_pub_->publish(inference_latency_msg);
       pnp_latency_msg.data = (pnp_end_time - extraction_end_time).seconds() * 1000;
@@ -256,11 +263,8 @@ void IrmDetector::message_callback(const sensor_msgs::msg::Image::ConstSharedPtr
           visualized_image, fmt::format("Total latency: {} ms", total_latency_msg.data),
           cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
         cv::putText(
-          visualized_image, fmt::format("Comm latency: {} ms", comm_latency_msg.data),
+          visualized_image, fmt::format("Inference latency: {} ms", inference_latency_msg.data),
           cv::Point(10, 60), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
-        cv::putText(
-          visualized_image, fmt::format("Processing latency: {} ms", processing_latency_msg.data),
-          cv::Point(10, 90), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
         visualized_img_pub_.publish(
           cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", visualized_image).toImageMsg());
 
@@ -298,7 +302,8 @@ std::vector<Armor> IrmDetector::extract_armors(
     cv::Mat roi = image(cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y));
 
     // Get the binary version of the ROI
-    cv::Mat roi_gray, roi_binary;
+    cv::Mat roi_gray;
+    cv::Mat roi_binary;
     cv::cvtColor(roi, roi_gray, cv::COLOR_BGR2GRAY);
     cv::threshold(roi_gray, roi_binary, binary_threshold_, 255, cv::THRESH_BINARY);
 
@@ -318,7 +323,7 @@ std::vector<Armor> IrmDetector::extract_armors(
       if (!light.is_light(light_min_ratio_, light_max_ratio_, light_max_angle_)) continue;
 
       light.offset_bbox(min_x, min_y);
-      light_list.emplace_back(light);
+      light_list.emplace_back(std::move(light));
     }
 
     if (light_list.size() < 2) continue;
@@ -327,18 +332,21 @@ std::vector<Armor> IrmDetector::extract_armors(
     armor = Armor(light_list[0], light_list[1]);
     armor.armor_class = bbox.class_id;
     armor.confidence = bbox.score;
-    float avg_light_length = (light_list[0].length + light_list[1].length) / 2;
-    float center_distance =
+    double avg_light_length = (light_list[0].length + light_list[1].length) / 2;
+    double center_distance =
       cv::norm(armor.left_light.center - armor.right_light.center) / avg_light_length;
     armor.size =
       center_distance > armor_min_large_center_distance_ ? ArmorSize::LARGE : ArmorSize::SMALL;
-    bool center_distance_valid =
-      (armor.size == ArmorSize::SMALL && armor_min_small_center_distance_ < center_distance &&
-       center_distance < armor_max_small_center_distance_) ||
-      (armor.size == ArmorSize::LARGE && armor_min_large_center_distance_ < center_distance &&
-       center_distance < armor_max_large_center_distance_);
-    if (!center_distance_valid) continue;
-    armors.emplace_back(armor);
+    // Check for center distance
+    if (
+      armor.size == ArmorSize::SMALL && (armor_min_small_center_distance_ > center_distance ||
+                                         armor_max_small_center_distance_ < center_distance))
+      continue;
+    if (
+      armor.size == ArmorSize::LARGE && (armor_min_large_center_distance_ > center_distance ||
+                                         armor_max_large_center_distance_ < center_distance))
+      continue;
+    armors.emplace_back(std::move(armor));
   }
 
   return armors;

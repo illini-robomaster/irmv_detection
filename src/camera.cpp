@@ -1,17 +1,19 @@
 
 #include "irmv_detection/camera.hpp"
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 
 namespace irmv_detection
 {
-VirtualCamera::VirtualCamera(const std::string & video_path, int fps)
+VirtualCamera::VirtualCamera(const std::string & video_path, uint8_t * buffer, int fps)
 : video_path_(video_path), fps_(fps)
 {
   cap_ = cv::VideoCapture(video_path_.string());
   if (!cap_.isOpened()) {
     throw std::runtime_error("Cannot open video file");
   }
+  frame_ = cv::Mat(1024, 1280, CV_8UC3, buffer);
   stream_thread_ = std::jthread(&VirtualCamera::stream_thread, this);
   receive_thread_ = std::jthread(&VirtualCamera::receive_thread, this);
   stream_thread_.detach();
@@ -23,16 +25,15 @@ VirtualCamera::VirtualCamera(const std::string & video_path, int fps)
   namespace chrono = std::chrono;
   auto interval = chrono::milliseconds(1000 / fps_);
   while (true) {
-    auto start_time = chrono::high_resolution_clock::now();
+    auto start_time = chrono::system_clock::now();
     std::unique_lock lock(frame_buffer_mutex_);
     producer_cv_.wait(lock, [this] { return !frame_ready_; });
-    cap_ >> frame_;
-    time_stamp_ = start_time;
-    if (frame_.empty()) {
+    if (!cap_.grab()) {
       cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
-      cap_ >> frame_;
-      time_stamp_ = start_time;
+      cap_.grab();
     }
+    cap_.retrieve(frame_);
+    time_stamp_ = start_time;
     frame_ready_ = true;
     lock.unlock();
     consumer_cv_.notify_one();
@@ -40,11 +41,11 @@ VirtualCamera::VirtualCamera(const std::string & video_path, int fps)
   }
 }
 
-void VirtualCamera::receive_thread()
+[[noreturn]] void VirtualCamera::receive_thread()
 {
   namespace chrono = std::chrono;
   int frame_count = 0;
-  auto starting_time = chrono::high_resolution_clock::now();
+  auto starting_time = chrono::system_clock::now();
   while (true) {
     std::unique_lock lock(frame_buffer_mutex_);
     consumer_cv_.wait(lock, [this] { return frame_ready_; });
@@ -52,12 +53,12 @@ void VirtualCamera::receive_thread()
       camera_callback_(frame_, time_stamp_);
     }
     frame_ready_ = false;
-
     lock.unlock();
     producer_cv_.notify_one();
+
     frame_count++;
     if (frame_count == 100) {
-      auto cur_time = chrono::high_resolution_clock::now();
+      auto cur_time = chrono::system_clock::now();
       std::cout << "FPS: "
                 << 100 / (chrono::duration<double>(cur_time - starting_time).count())
                 << std::endl;

@@ -12,7 +12,7 @@ namespace irmv_detection
 class Camera
 {
 public:
-  using CameraCallback = std::function<void (cv::Mat &, std::chrono::time_point<std::chrono::high_resolution_clock>)>;
+  using CameraCallback = std::function<void (cv::Mat &, std::chrono::time_point<std::chrono::system_clock>)>;
   Camera() = default;
   virtual void set_camera_callback(const CameraCallback & callback) = 0;
   virtual ~Camera() = default;
@@ -24,7 +24,7 @@ protected:
 class VirtualCamera : public Camera
 {
 public:
-  explicit VirtualCamera(const std::string & video_path, int fps = 100);
+  explicit VirtualCamera(const std::string & video_path, uint8_t * buffer, int fps = 100);
   void set_camera_callback(const CameraCallback & callback) override;
   ~VirtualCamera() override = default;
 
@@ -37,7 +37,7 @@ private:
   cv::VideoCapture cap_;
   int fps_;
   cv::Mat frame_;
-  std::chrono::time_point<std::chrono::high_resolution_clock> time_stamp_;
+  std::chrono::time_point<std::chrono::system_clock> time_stamp_;
   bool frame_ready_ = false;
   std::mutex frame_buffer_mutex_;
   std::condition_variable consumer_cv_;

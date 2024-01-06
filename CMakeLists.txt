@@ -41,6 +41,7 @@ ament_target_dependencies(irmv_detection
   tf2_geometry_msgs
   tf2
   fmt
+  camera_info_manager
 )
 target_link_libraries(irmv_detection
   nvinfer
@@ -103,4 +104,8 @@ if(BUILD_TESTING)
   )
 endif()
 
-ament_auto_package()
+ament_auto_package(
+  INSTALL_TO_SHARE
+  models
+  config
+)

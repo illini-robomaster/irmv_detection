@@ -59,7 +59,7 @@ YoloEngine::YoloEngine(
 
   // Use unified memory to gain better performance on Jetson devices
   cudaMallocManaged(
-    std::bit_cast<void **>(&rotated_image_buffer_),
+    std::bit_cast<void **>(&src_image_buffer_),
     image_input_size.height * image_input_size.width * 3);
   cudaMallocManaged(
     std::bit_cast<void **>(&output_buffer_.num_dets), get_dim_size(num_dets_dims) * sizeof(int));
@@ -77,7 +77,7 @@ YoloEngine::YoloEngine(
   cudaMalloc(std::bit_cast<void **>(&input_buffer_), get_dim_size(input_dims) * sizeof(float));
 
   rotated_image_ = cv::Mat(
-    cv::Size(image_input_size_.width, image_input_size_.height), CV_8UC3, rotated_image_buffer_);
+    cv::Size(image_input_size_.width, image_input_size_.height), CV_8UC3, src_image_buffer_);
 
   // Compliant with enqueueV3 API
   context_->setInputTensorAddress("images", input_buffer_);
@@ -104,6 +104,10 @@ YoloEngine::YoloEngine(
   context_->enqueueV3(stream_);
   cudaStreamEndCapture(stream_, &graph_);
   cudaGraphInstantiate(&graph_exec_, graph_, 0);
+  cudaStreamSynchronize(stream_);
+  // Strange segfault bugs will occur if the line above is removed
+  // I suspect it's because the GPU is still using src_image_buffer_ if no synchronization is enforced so any access to it on CPU will segfault
+  // https://forums.developer.nvidia.com/t/segmentation-fault-when-using-uma-and-pthreads/245973/4
 }
 
 YoloEngine::~YoloEngine()
@@ -111,7 +115,7 @@ YoloEngine::~YoloEngine()
   cudaStreamDestroy(stream_);
   cudaGraphExecDestroy(graph_exec_);
   cudaGraphDestroy(graph_);
-  cudaFree(rotated_image_buffer_);
+  cudaFree(src_image_buffer_);
   cudaFree(resized_image_buffer_);
   cudaFree(input_buffer_hwc_);
   cudaFree(input_buffer_);
@@ -166,9 +170,6 @@ std::vector<YoloEngine::bbox> YoloEngine::detect(const cv::Mat & image)
     preprocess_start = std::chrono::high_resolution_clock::now();
   }
   // Preprocess & Inference [device side]
-  cudaMemcpyAsync(
-    rotated_image_buffer_, image.ptr(), image_input_size_.height * image_input_size_.width * 3,
-    cudaMemcpyDefault, stream_);
   cudaGraphLaunch(graph_exec_, stream_);
   cudaStreamSynchronize(stream_);
 
@@ -188,11 +189,11 @@ void YoloEngine::preprocess()
 {
   // Rotate 180 degrees
   nppiMirror_8u_C3IR_Ctx(
-    rotated_image_buffer_, image_input_size_.width * 3,
+    src_image_buffer_, image_input_size_.width * 3,
     NppiSize{image_input_size_.width, image_input_size_.height}, NPP_BOTH_AXIS, npp_context_);
   // Resize to 640x640
   nppiResize_8u_C3R_Ctx(
-    rotated_image_buffer_, image_input_size_.width * 3,
+    src_image_buffer_, image_input_size_.width * 3,
     NppiSize{image_input_size_.width, image_input_size_.height},
     NppiRect{0, 0, image_input_size_.width, image_input_size_.height}, resized_image_buffer_,
     640 * 3, NppiSize{640, 640}, NppiRect{0, 0, 640, 640}, NPPI_INTER_LINEAR, npp_context_);

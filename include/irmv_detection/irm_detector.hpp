@@ -11,6 +11,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 
 #include "irmv_detection/armor.hpp"
+#include "irmv_detection/camera.hpp"
 #include "irmv_detection/pnp_solver.hpp"
 #include "irmv_detection/yolo_engine.hpp"
 
@@ -28,7 +29,8 @@ public:
 private:
   void declare_parameters();
   void create_debug_publishers();
-  void message_callback(const sensor_msgs::msg::Image::ConstSharedPtr & msg);
+  void message_callback(
+    cv::Mat & image, std::chrono::time_point<std::chrono::system_clock> time_stamp);
   std::vector<Armor> extract_armors(
     const cv::Mat & image, const std::vector<YoloEngine::bbox> & bboxes) const;
   void visualize_armors(cv::Mat & image, const std::vector<Armor> & armors) const;
@@ -40,9 +42,8 @@ private:
   std::unique_ptr<YoloEngine> yolo_engine_;
   std::unique_ptr<PnPSolver> pnp_solver_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armors_pub_;
-  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
-  image_transport::Subscriber img_sub_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_event_handle_;
+  std::unique_ptr<Camera> camera_;
 
   // Parameters
   bool enable_debug_;  // This publishes visualized image and profiling data
