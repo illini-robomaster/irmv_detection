@@ -123,4 +123,5 @@ ament_auto_package(
   INSTALL_TO_SHARE
   models
   config
+  test
 )
