@@ -35,11 +35,15 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   yolo_engine_ =
     std::make_unique<YoloEngine>(node_, model_path, image_input_size_, enable_profiling_);
 
+  RCLCPP_INFO(node_->get_logger(), "YOLOEngine initialized");
+
   // Warmup
   cv::Mat dummy_image = cv::Mat::zeros(image_input_size_, CV_8UC3);
   for (int i = 0; i < 100; i++) {
     yolo_engine_->detect(dummy_image);
   }
+
+  RCLCPP_INFO(node_->get_logger(), "YOLOEngine warmed up");
 
   auto camera_info_manager =
     std::make_unique<camera_info_manager::CameraInfoManager>(node_.get(), "mv_camera");
@@ -52,6 +56,8 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   camera_info_manager->loadCameraInfo(camera_info_url);
   auto camera_info_msg = camera_info_manager->getCameraInfo();
   pnp_solver_ = std::make_unique<PnPSolver>(camera_info_msg.k, camera_info_msg.d);
+
+  RCLCPP_INFO(node_->get_logger(), "PnPSolver initialized");
 
   // Handle parameter changes
   param_event_handle_ = node_->add_on_set_parameters_callback(
@@ -67,8 +73,8 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   // Initialize camera
   camera_ = std::make_unique<VirtualCamera>(
     "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
-    yolo_engine_->get_src_image_buffer(), 100);
-  camera_->set_camera_callback(std::bind_front(&IrmDetector::message_callback, this));
+    yolo_engine_->get_src_image_buffer(), std::bind_front(&IrmDetector::message_callback, this),
+    100);
 }
 
 void IrmDetector::create_debug_publishers()
@@ -174,7 +180,8 @@ void IrmDetector::declare_parameters()
 void IrmDetector::message_callback(
   cv::Mat & image, std::chrono::time_point<std::chrono::system_clock> time_stamp)
 {
-  rclcpp::Time extraction_end_time, pnp_end_time;
+  rclcpp::Time extraction_end_time;
+  rclcpp::Time pnp_end_time;
 
   std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(image);
 

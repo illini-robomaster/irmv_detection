@@ -6,8 +6,9 @@
 
 namespace irmv_detection
 {
-VirtualCamera::VirtualCamera(const std::string & video_path, uint8_t * buffer, int fps)
-: video_path_(video_path), fps_(fps)
+VirtualCamera::VirtualCamera(
+  const std::string & video_path, uint8_t * buffer, const CameraCallback & callback, int fps)
+: camera_callback_(callback), video_path_(video_path), fps_(fps)
 {
   cap_ = cv::VideoCapture(video_path_.string());
   if (!cap_.isOpened()) {
@@ -33,6 +34,7 @@ VirtualCamera::VirtualCamera(const std::string & video_path, uint8_t * buffer, i
       cap_.grab();
     }
     cap_.retrieve(frame_);
+    cv::cvtColor(frame_, frame_, cv::COLOR_BGR2RGB);
     time_stamp_ = start_time;
     frame_ready_ = true;
     lock.unlock();
@@ -49,9 +51,7 @@ VirtualCamera::VirtualCamera(const std::string & video_path, uint8_t * buffer, i
   while (true) {
     std::unique_lock lock(frame_buffer_mutex_);
     consumer_cv_.wait(lock, [this] { return frame_ready_; });
-    if (camera_callback_) {
-      camera_callback_(frame_, time_stamp_);
-    }
+    camera_callback_(frame_, time_stamp_);
     frame_ready_ = false;
     lock.unlock();
     producer_cv_.notify_one();
@@ -59,18 +59,12 @@ VirtualCamera::VirtualCamera(const std::string & video_path, uint8_t * buffer, i
     frame_count++;
     if (frame_count == 100) {
       auto cur_time = chrono::system_clock::now();
-      std::cout << "FPS: "
-                << 100 / (chrono::duration<double>(cur_time - starting_time).count())
+      std::cout << "FPS: " << 100 / (chrono::duration<double>(cur_time - starting_time).count())
                 << std::endl;
       starting_time = cur_time;
       frame_count = 0;
     }
   }
-}
-
-void VirtualCamera::set_camera_callback(const CameraCallback & callback)
-{
-  camera_callback_ = callback;
 }
 
 }  // namespace irmv_detection
