@@ -8,14 +8,16 @@ A hardware-accelerated (for NVIDIA GPUs) armor detection ROS2 node for RoboMaste
 ## Performance Benchmark
 | Model | Input Size | Inference Time* <br> (Jetson Orin Nano 8GB) | Inference Time* <br> (RTX 3060 Laptop 115W) |
 | :---: | :---: | :---: | :---: |
-| YOLOv8n | 640x640 | - | ~ 4-5ms |
-| YOLOv8n <br> (Shufflenet backbone)** | 640x640 | ~5-6ms | ~ 3-4ms |
+| YOLOv8n | 640x640 | ~5ms | ~ 4-5ms |
+| YOLOv8n <br> (Shufflenet backbone)** | 640x640 | ~5ms | ~ 3-4ms |
 
 *: The inference time includes the time for image preprocessing and postprocessing (NMS).
 
 **: https://github.com/zRzRzRzRzRzRzR/YOLO-of-RoboMaster-Keypoints-Detection-2023
 
 Note that due to use of Unified Memory, the performance on dGPU devices is not ideal. However this enables true zero-copy on Tegra (e.g. Jetson) devices, potentially reducing the latency of image transfer between CPU and GPU.
+
+Disclaimer: The results are obtained from `yolo_engine_benchmark` in `test/yolo_test.cpp`, and they do not necessarily reflect the actual performance when used in a ROS2 node.
 
 ## Acceleration Techniques
 Below are techniques used or planned to use in this package to accelerate the inference process (some of them are still under development):
