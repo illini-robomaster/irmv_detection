@@ -44,9 +44,9 @@ private:
 class MVCamera : public Camera
 {
 public:
-  explicit MVCamera(const CameraCallback & callback);
+  explicit MVCamera(uint8_t * buffer, cv::Size image_size, const CameraCallback & callback);
   void trigger_callback(CameraHandle hCamera, BYTE * pFrameBuffer, tSdkFrameHead * pFrameHead);
-  ~MVCamera() override = default;
+  ~MVCamera() override;
 
 private:
   CameraCallback camera_callback_;

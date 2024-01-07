@@ -29,12 +29,12 @@ public:
 
   YoloEngine(
     rclcpp::Node::ConstSharedPtr node, const std::string & onnx_file_path,
-    cv::Size image_input_size, bool enable_profiling = false);
+    cv::Size src_image_size, bool enable_profiling = false);
   ~YoloEngine();
-  std::vector<bbox> detect(const cv::Mat & image);
+  std::vector<bbox> detect();
   void visualize_bboxes(cv::Mat & image, const std::vector<bbox> & bboxes) const;
   double get_profiling_time() const { return inference_time_.count(); }
-  const cv::Mat & get_rotated_image() const { return rotated_image_; }
+  const cv::Mat & get_rotated_image() const { return src_image_; }
   uint8_t * get_src_image_buffer() const { return src_image_buffer_; }
 
 private:
@@ -45,8 +45,8 @@ private:
   rclcpp::Node::ConstSharedPtr node_;
 
   // OpenCV related
-  cv::Mat rotated_image_;
-  cv::Size image_input_size_;
+  cv::Mat src_image_;
+  cv::Size src_image_size_;
 
   // TensorRT and NPP related
   IRuntime * runtime_;

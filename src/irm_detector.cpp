@@ -40,7 +40,7 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   // Warmup
   cv::Mat dummy_image = cv::Mat::zeros(image_input_size_, CV_8UC3);
   for (int i = 0; i < 100; i++) {
-    yolo_engine_->detect(dummy_image);
+    yolo_engine_->detect();
   }
 
   RCLCPP_INFO(node_->get_logger(), "YOLOEngine warmed up");
@@ -71,10 +71,11 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   }
 
   // Initialize camera
-  camera_ = std::make_unique<VirtualCamera>(
-    "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
-    yolo_engine_->get_src_image_buffer(), std::bind_front(&IrmDetector::message_callback, this),
-    100);
+  // camera_ = std::make_unique<VirtualCamera>(
+  //   "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
+  //   yolo_engine_->get_src_image_buffer(), std::bind_front(&IrmDetector::message_callback, this),
+  //   100);
+  camera_ = std::make_unique<MVCamera>(yolo_engine_->get_src_image_buffer(), image_input_size_, std::bind_front(&IrmDetector::message_callback, this));
 }
 
 void IrmDetector::create_debug_publishers()
@@ -82,10 +83,6 @@ void IrmDetector::create_debug_publishers()
   if (enable_profiling_) {
     total_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>(
       "/detector/total_latency", rclcpp::SystemDefaultsQoS());
-    comm_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>(
-      "/detector/comm_latency", rclcpp::SystemDefaultsQoS());
-    processing_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>(
-      "/detector/processing_latency", rclcpp::SystemDefaultsQoS());
     inference_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>(
       "/yolo_engine/inference_latency", rclcpp::SystemDefaultsQoS());
     pnp_latency_pub_ = node_->create_publisher<std_msgs::msg::Float64>(
@@ -183,7 +180,7 @@ void IrmDetector::message_callback(
   rclcpp::Time extraction_end_time;
   rclcpp::Time pnp_end_time;
 
-  std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect(image);
+  std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect();
 
   std::vector<Armor> armors = extract_armors(yolo_engine_->get_rotated_image(), bboxes);
 

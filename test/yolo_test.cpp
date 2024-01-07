@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdint>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <opencv2/highgui.hpp>
@@ -8,24 +9,6 @@
 #include "irmv_detection/magic_enum.hpp"
 #include "irmv_detection/yolo_engine.hpp"
 
-static void visualize_bboxes(
-  cv::Mat & image, std::vector<irmv_detection::YoloEngine::bbox> & bboxes)
-{
-  for (auto & bbox : bboxes) {
-    cv::Point p1(static_cast<int>(bbox.xyxy[0]), bbox.xyxy[1]);
-    cv::Point p2(bbox.xyxy[2], bbox.xyxy[3]);
-    cv::Scalar color;
-    if (magic_enum::enum_name(bbox.class_id)[0] == 'B') {
-      color = cv::Scalar(255, 0, 0);
-    } else {
-      color = cv::Scalar(0, 0, 255);
-    }
-    cv::rectangle(image, p1, p2, color, 2);
-    cv::putText(
-      image, std::string(magic_enum::enum_name(bbox.class_id)), p1, cv::FONT_HERSHEY_SIMPLEX, 1,
-      color, 2);
-  }
-}
 
 TEST(irmv_detection, yolo_engine_demo)
 {
@@ -41,7 +24,9 @@ TEST(irmv_detection, yolo_engine_demo)
   cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
   cv::namedWindow("result", cv::WINDOW_NORMAL);
 
-  std::vector<irmv_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
+  uint8_t * src_image_buffer = yolo_engine.get_src_image_buffer();
+  memcpy(src_image_buffer, image.data, image.total() * image.elemSize());
+  std::vector<irmv_detection::YoloEngine::bbox> bboxes = yolo_engine.detect();
 
   std::cout << "bboxes.size(): " << bboxes.size() << std::endl;
 
@@ -57,7 +42,7 @@ TEST(irmv_detection, yolo_engine_demo)
   }
 
   cv::Mat visualized_image = yolo_engine.get_rotated_image().clone();
-  visualize_bboxes(visualized_image, bboxes);
+  yolo_engine.visualize_bboxes(visualized_image, bboxes);
 
   cv::imshow("result", visualized_image);
   cv::waitKey(0);
@@ -79,8 +64,10 @@ TEST(irmv_detection, yolo_engine_benchmark)
   std::cout << "Benchmarking..." << std::endl;
 
   // Warmpup
+  uint8_t * src_image_buffer = yolo_engine.get_src_image_buffer();
   for (int i = 0; i < 100; i++) {
-    std::vector<irmv_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
+    memcpy(src_image_buffer, image.data, image.total() * image.elemSize());
+    std::vector<irmv_detection::YoloEngine::bbox> bboxes = yolo_engine.detect();
   }
 
   std::vector<double> avg_times;
@@ -90,7 +77,8 @@ TEST(irmv_detection, yolo_engine_benchmark)
       std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < 10; i++) {
-      std::vector<irmv_detection::YoloEngine::bbox> bboxes = yolo_engine.detect(image);
+      memcpy(src_image_buffer, image.data, image.total() * image.elemSize());
+      std::vector<irmv_detection::YoloEngine::bbox> bboxes = yolo_engine.detect();
     }
 
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();

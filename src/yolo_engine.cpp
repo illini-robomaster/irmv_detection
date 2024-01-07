@@ -22,9 +22,9 @@ static Logger gLogger;
 namespace fs = std::filesystem;
 
 YoloEngine::YoloEngine(
-  rclcpp::Node::ConstSharedPtr node, const std::string & onnx_file_path, cv::Size image_input_size,
+  rclcpp::Node::ConstSharedPtr node, const std::string & onnx_file_path, cv::Size src_image_size,
   bool enable_profiling)
-: node_(node), image_input_size_(image_input_size), enable_profiling_(enable_profiling)
+: node_(node), src_image_size_(src_image_size), enable_profiling_(enable_profiling)
 {
   fs::path onnx_file(onnx_file_path);
   fs::path engine_file(onnx_file);
@@ -59,8 +59,7 @@ YoloEngine::YoloEngine(
 
   // Use unified memory to gain better performance on Jetson devices
   cudaMallocManaged(
-    std::bit_cast<void **>(&src_image_buffer_),
-    image_input_size.height * image_input_size.width * 3);
+    std::bit_cast<void **>(&src_image_buffer_), src_image_size_.height * src_image_size_.width * 3);
   cudaMallocManaged(
     std::bit_cast<void **>(&output_buffer_.num_dets), get_dim_size(num_dets_dims) * sizeof(int));
   cudaMallocManaged(
@@ -76,8 +75,8 @@ YoloEngine::YoloEngine(
   cudaMalloc(std::bit_cast<void **>(&input_buffer_hwc_), get_dim_size(input_dims) * sizeof(float));
   cudaMalloc(std::bit_cast<void **>(&input_buffer_), get_dim_size(input_dims) * sizeof(float));
 
-  rotated_image_ = cv::Mat(
-    cv::Size(image_input_size_.width, image_input_size_.height), CV_8UC3, src_image_buffer_);
+  src_image_ =
+    cv::Mat(cv::Size(src_image_size_.width, src_image_size_.height), CV_8UC3, src_image_buffer_);
 
   // Compliant with enqueueV3 API
   context_->setInputTensorAddress("images", input_buffer_);
@@ -144,25 +143,10 @@ void YoloEngine::load_engine_file(const std::string & engine_file_path)
   engine_ = runtime_->deserializeCudaEngine(engine_data.data(), engine_file_size);
 }
 
-std::vector<YoloEngine::bbox> YoloEngine::detect(const cv::Mat & image)
+std::vector<YoloEngine::bbox> YoloEngine::detect()
 {
-  static const float scale_x = static_cast<float>(image_input_size_.width) / 640;
-  static const float scale_y = static_cast<float>(image_input_size_.height) / 640;
-  if (image.cols != image_input_size_.width || image.rows != image_input_size_.height) {
-    if (node_ != nullptr)
-      RCLCPP_ERROR(
-        node_->get_logger(),
-        "YOLOEngine: Input image size does not match the input size specified in the "
-        "constructor.\nInput image size: %dx%d\nInput size specified in the constructor: %dx%d",
-        image.cols, image.rows, image_input_size_.width, image_input_size_.height);
-    else
-      std::cout << "YOLOEngine: Input image size does not match the input size specified in the "
-                   "constructor.\nInput image size: "
-                << image.cols << "x" << image.rows
-                << "\nInput size specified in the constructor: " << image_input_size_.width << "x"
-                << image_input_size_.height << std::endl;
-    exit(0);
-  }
+  static const float scale_x = static_cast<float>(src_image_size_.width) / 640;
+  static const float scale_y = static_cast<float>(src_image_size_.height) / 640;
 
   std::chrono::high_resolution_clock::time_point preprocess_start;
   std::chrono::high_resolution_clock::time_point inference_end;
@@ -189,14 +173,14 @@ void YoloEngine::preprocess()
 {
   // Rotate 180 degrees
   nppiMirror_8u_C3IR_Ctx(
-    src_image_buffer_, image_input_size_.width * 3,
-    NppiSize{image_input_size_.width, image_input_size_.height}, NPP_BOTH_AXIS, npp_context_);
+    src_image_buffer_, src_image_size_.width * 3,
+    NppiSize{src_image_size_.width, src_image_size_.height}, NPP_BOTH_AXIS, npp_context_);
   // Resize to 640x640
   nppiResize_8u_C3R_Ctx(
-    src_image_buffer_, image_input_size_.width * 3,
-    NppiSize{image_input_size_.width, image_input_size_.height},
-    NppiRect{0, 0, image_input_size_.width, image_input_size_.height}, resized_image_buffer_,
-    640 * 3, NppiSize{640, 640}, NppiRect{0, 0, 640, 640}, NPPI_INTER_LINEAR, npp_context_);
+    src_image_buffer_, src_image_size_.width * 3,
+    NppiSize{src_image_size_.width, src_image_size_.height},
+    NppiRect{0, 0, src_image_size_.width, src_image_size_.height}, resized_image_buffer_, 640 * 3,
+    NppiSize{640, 640}, NppiRect{0, 0, 640, 640}, NPPI_INTER_LINEAR, npp_context_);
   // Convert to float and remap values from [0, 255] to [0.0, 1.0] (normalize)
   nppiScale_8u32f_C3R_Ctx(
     resized_image_buffer_, 640 * 3, input_buffer_hwc_, 640 * 3 * sizeof(float), NppiSize{640, 640},
@@ -231,6 +215,10 @@ std::vector<YoloEngine::bbox> YoloEngine::parse_output(float scale_x, float scal
 void YoloEngine::visualize_bboxes(
   cv::Mat & image, const std::vector<irmv_detection::YoloEngine::bbox> & bboxes) const
 {
+  if (image.cols != src_image_size_.width || image.rows != src_image_size_.height) {
+    std::cerr << "[YoloEngine::visualize_bboxes] Image size mismatch" << std::endl;
+    return;
+  }
   for (auto & bbox : bboxes) {
     cv::Point p1(bbox.xyxy[0], bbox.xyxy[1]);
     cv::Point p2(bbox.xyxy[2], bbox.xyxy[3]);
