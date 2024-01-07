@@ -46,11 +46,10 @@ private:
   std::unique_ptr<Camera> camera_;
 
   // Parameters
-  bool enable_debug_;  // This publishes visualized image and profiling data
-  bool
-    enable_profiling_;    // This publishes profiling data (always enabled if enable_debug_ is true)
-  bool enable_rviz_;      // This publishes armor markers for visualization in Rviz
-  int binary_threshold_;  // Binary threshold for thresholding the image during armor extraction
+  bool enable_debug_;      // This publishes visualized image and profiling data
+  bool enable_profiling_;  // This publishes profiling data (enabled if enable_debug_ is true)
+  bool enable_rviz_;       // This publishes armor markers for visualization in Rviz
+  int binary_threshold_;   // Binary threshold for thresholding the image during armor extraction
   int enemy_color_;
   double light_min_ratio_;
   double light_max_ratio_;
@@ -66,10 +65,6 @@ private:
   image_transport::Publisher binary_img_pub_;      // Binary image after thresholding
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr
     total_latency_pub_;  // Total latency from image fetch to PnP estimation
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr
-    comm_latency_pub_;  // Communication latency from image fetch to callback start (this is caused by ROS2 communication, we can't do anything about it)
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr
-    processing_latency_pub_;  // Processing latency = total latency - communication latency
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr
     inference_latency_pub_;  // Inference latency caused by YOLOEngine, this includes preprocessing, inference, and postprocessing
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr
