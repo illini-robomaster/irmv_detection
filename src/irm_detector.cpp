@@ -260,7 +260,7 @@ void IrmDetector::message_callback(
       pnp_latency_pub_->publish(pnp_latency_msg);
       // Publish debug images
       if (enable_debug_) {
-        cv::Mat visualized_image = yolo_engine_->get_rotated_image().clone();
+        cv::Mat visualized_image = image.clone();
         visualize_armors(visualized_image, armors);
         yolo_engine_->visualize_bboxes(visualized_image, bboxes);
         cv::putText(
@@ -272,7 +272,7 @@ void IrmDetector::message_callback(
         visualized_img_pub_.publish(
           cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", visualized_image).toImageMsg());
 
-        cv::Mat binary_image = yolo_engine_->get_rotated_image().clone();
+        cv::Mat binary_image = image.clone();
         cv::cvtColor(binary_image, binary_image, cv::COLOR_BGR2GRAY);
         cv::threshold(binary_image, binary_image, binary_threshold_, 255, cv::THRESH_BINARY);
         cv::cvtColor(binary_image, binary_image, cv::COLOR_GRAY2BGR);

@@ -1,6 +1,7 @@
 #include <CameraApi.h>
 #include <CameraDefine.h>
 
+#include "CameraStatus.h"
 #include "irmv_detection/camera.hpp"
 
 namespace irmv_detection
@@ -17,11 +18,11 @@ void CameraCallbackFunction(
   }
 }
 
-MVCamera::MVCamera(const CameraCallback & callback) : camera_callback_(callback)
+MVCamera::MVCamera(uint8_t * buffer, cv::Size image_size, const CameraCallback & callback) : camera_callback_(callback)
 {
   CameraSdkInit(0);
 
-  int iCameraCounts = 0;
+  int iCameraCounts = 1;
   tSdkCameraDevInfo tCameraEnumList;
   int iStatus = CameraEnumerateDevice(&tCameraEnumList, &iCameraCounts);
   std::cout << "Camera count: " << iCameraCounts << std::endl;
@@ -44,6 +45,19 @@ MVCamera::MVCamera(const CameraCallback & callback) : camera_callback_(callback)
   CameraSetTriggerMode(h_camera_, 2);
 
   CameraSetAeState(h_camera_, FALSE);
+
+  tSdkCameraCapbility tCapability;
+  CameraGetCapability(h_camera_, &tCapability);
+  std::cout << "pImageSizeDesc->iWidth: " << tCapability.pImageSizeDesc << std::endl;
+  std::cout << "pImageSizeDesc->iHeight: " << tCapability.pImageSizeDesc->iHeight << std::endl;
+  double exposure_line_time;
+  CameraGetExposureLineTime(h_camera_, &exposure_line_time);
+  CameraSetExposureTime(h_camera_, 5000);
+
+  int analog_gain;
+  CameraGetAnalogGain(h_camera_, &analog_gain);
+  CameraSetAnalogGain(h_camera_, analog_gain);
+
   CameraPlay(h_camera_);
   CameraSetIspOutFormat(h_camera_, CAMERA_MEDIA_TYPE_RGB8);
 
@@ -52,6 +66,16 @@ MVCamera::MVCamera(const CameraCallback & callback) : camera_callback_(callback)
   std::cout << "trigger_mode: " << trigger_mode << std::endl;
 
   CameraSetCallbackFunction(h_camera_, &CameraCallbackFunction, this, nullptr);
+
+  frame_ = cv::Mat(1024, 1280, CV_8UC3, buffer);
+  receive_thread_ = std::jthread(&MVCamera::receive_thread, this);
+  receive_thread_.detach();
+}
+
+MVCamera::~MVCamera()
+{
+  CameraStop(h_camera_);
+  CameraUnInit(h_camera_);
 }
 
 void MVCamera::trigger_callback(
