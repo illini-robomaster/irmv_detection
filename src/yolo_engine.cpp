@@ -22,9 +22,8 @@ static Logger gLogger;
 namespace fs = std::filesystem;
 
 YoloEngine::YoloEngine(
-  rclcpp::Node::ConstSharedPtr node, const std::string & onnx_file_path, cv::Size src_image_size,
-  bool enable_profiling)
-: node_(node), src_image_size_(src_image_size), enable_profiling_(enable_profiling)
+  const std::string & onnx_file_path, cv::Size src_image_size, bool enable_profiling)
+: src_image_size_(src_image_size), enable_profiling_(enable_profiling)
 {
   fs::path onnx_file(onnx_file_path);
   fs::path engine_file(onnx_file);
@@ -107,6 +106,11 @@ YoloEngine::YoloEngine(
   // Strange segfault bugs will occur if the line above is removed
   // I suspect it's because the GPU is still using src_image_buffer_ if no synchronization is enforced so any access to it on CPU will segfault
   // https://forums.developer.nvidia.com/t/segmentation-fault-when-using-uma-and-pthreads/245973/4
+
+  // Warm up
+  for (int i = 0; i < 50; i++) {
+    detect();
+  }
 }
 
 YoloEngine::~YoloEngine()

@@ -4,8 +4,6 @@
 #include <cstdint>
 #include <string>
 
-#include <rclcpp/rclcpp.hpp>
-
 #include <NvInferRuntime.h>
 #include <nppdefs.h>
 #include <opencv2/opencv.hpp>
@@ -28,8 +26,7 @@ public:
   };
 
   YoloEngine(
-    rclcpp::Node::ConstSharedPtr node, const std::string & onnx_file_path,
-    cv::Size src_image_size, bool enable_profiling = false);
+    const std::string & onnx_file_path, cv::Size src_image_size, bool enable_profiling = false);
   ~YoloEngine();
   std::vector<bbox> detect();
   void visualize_bboxes(cv::Mat & image, const std::vector<bbox> & bboxes) const;
@@ -41,8 +38,6 @@ private:
   void load_engine_file(const std::string & engine_file_path);
   void preprocess();
   std::vector<bbox> parse_output(float scale_x, float scale_y) const;
-
-  rclcpp::Node::ConstSharedPtr node_;
 
   // OpenCV related
   cv::Mat src_image_;
