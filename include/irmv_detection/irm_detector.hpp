@@ -74,6 +74,8 @@ private:
   visualization_msgs::msg::Marker text_marker_;
   visualization_msgs::msg::MarkerArray marker_array_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
+
+  // Integrated Camera Driver
   std::unique_ptr<Camera> camera_;
 };
 }  // namespace irmv_detection

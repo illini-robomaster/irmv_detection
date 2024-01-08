@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
+#include <fmt/format.h>
 
 #include "irmv_detection/camera.hpp"
 #include "irmv_detection/yolo_engine.hpp"
@@ -13,7 +14,7 @@
 std::atomic<bool> stop_program = false;
 void stop_program_callback(int sig)
 {
-  (void) sig;
+  (void)sig;
   stop_program = true;
 }
 
@@ -25,14 +26,15 @@ TEST(irmv_detection, virtual_camera)
   auto callback = [&yolo_engine](
                     const cv::Mat & image,
                     std::chrono::time_point<std::chrono::system_clock> time_stamp) {
-    (void) image;
+    (void)image;
     auto bboxes = yolo_engine.detect();
     auto cur_time = std::chrono::system_clock::now();
     auto processing_time = std::chrono::duration<double, std::milli>(cur_time - time_stamp).count();
     if (processing_time > 10) {
-      std::cout
-        << "[WARN] Latency exceeded desired value, camera fetch may be blocked. Processing time: "
-        << processing_time << "ms" << std::endl;
+      fmt::print(
+        "[WARN] Latency exceeded desired value, camera fetch may be blocked. Processing time: "
+        "{}ms\n",
+        processing_time);
     }
   };
   irmv_detection::Camera::Config config;
@@ -55,14 +57,15 @@ TEST(irmv_detection, mv_camera)
   auto callback = [&yolo_engine](
                     const cv::Mat & image,
                     std::chrono::time_point<std::chrono::system_clock> time_stamp) {
-    (void) image;
+    (void)image;
     auto bboxes = yolo_engine.detect();
     auto cur_time = std::chrono::system_clock::now();
     auto processing_time = std::chrono::duration<double, std::milli>(cur_time - time_stamp).count();
     if (processing_time > 10) {
-      std::cout
-        << "[WARN] Latency exceeded desired value, camera fetch may be blocked. Processing time: "
-        << processing_time << "ms" << std::endl;
+      fmt::print(
+        "[WARN] Latency exceeded desired value, camera fetch may be blocked. Processing time: "
+        "{}ms\n",
+        processing_time);
     }
   };
   irmv_detection::Camera::Config config;

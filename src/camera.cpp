@@ -4,6 +4,8 @@
 #include <mutex>
 #include <stdexcept>
 
+#include <fmt/format.h>
+
 namespace irmv_detection
 {
 VirtualCamera::VirtualCamera(
@@ -62,8 +64,7 @@ void VirtualCamera::receive_thread()
     frame_count++;
     if (frame_count == 100) {
       auto cur_time = chrono::system_clock::now();
-      std::cout << "FPS: " << 100 / (chrono::duration<double>(cur_time - starting_time).count())
-                << std::endl;
+      fmt::print("FPS: {}\n", 100 / (chrono::duration<double>(cur_time - starting_time).count()));
       starting_time = cur_time;
       frame_count = 0;
     }
