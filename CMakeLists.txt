@@ -103,6 +103,13 @@ if(BUILD_TESTING)
   )
 endif()
 
+install(TARGETS irmv_detection
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
 ament_auto_package(
   INSTALL_TO_SHARE
   models
