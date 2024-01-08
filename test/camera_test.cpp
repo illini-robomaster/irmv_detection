@@ -21,7 +21,7 @@ TEST(irmv_detection, virtual_camera)
 {
   std::string model_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
-  irmv_detection::YoloEngine yolo_engine(nullptr, model_path, cv::Size(1280, 1024), false);
+  irmv_detection::YoloEngine yolo_engine(model_path, cv::Size(1280, 1024), false);
   auto callback = [&yolo_engine](
                     const cv::Mat & image,
                     std::chrono::time_point<std::chrono::system_clock> time_stamp) {
@@ -51,7 +51,7 @@ TEST(irmv_detection, mv_camera)
 {
   std::string model_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
-  irmv_detection::YoloEngine yolo_engine(nullptr, model_path, cv::Size(1280, 1024), false);
+  irmv_detection::YoloEngine yolo_engine(model_path, cv::Size(1280, 1024), false);
   auto callback = [&yolo_engine](
                     const cv::Mat & image,
                     std::chrono::time_point<std::chrono::system_clock> time_stamp) {

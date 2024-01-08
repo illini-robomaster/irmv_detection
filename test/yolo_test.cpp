@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdint>
+#include <numeric>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <opencv2/highgui.hpp>
@@ -15,7 +16,7 @@ TEST(irmv_detection, yolo_engine_demo)
   cudaSetDevice(0);
   std::string model_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
-  irmv_detection::YoloEngine yolo_engine(nullptr, model_path, cv::Size(1280, 1024));
+  irmv_detection::YoloEngine yolo_engine(model_path, cv::Size(1280, 1024));
 
   std::string image_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/test/rm_test.jpg";
@@ -54,7 +55,7 @@ TEST(irmv_detection, yolo_engine_benchmark)
   cudaSetDevice(0);
   std::string model_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
-  irmv_detection::YoloEngine yolo_engine(nullptr, model_path, cv::Size(1280, 1024), false);
+  irmv_detection::YoloEngine yolo_engine(model_path, cv::Size(1280, 1024), false);
 
   std::string image_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/test/rm_test.jpg";

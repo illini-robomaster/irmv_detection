@@ -33,7 +33,7 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   auto model_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
   yolo_engine_ =
-    std::make_unique<YoloEngine>(node_, model_path, image_input_size_, enable_profiling_);
+    std::make_unique<YoloEngine>(model_path, image_input_size_, enable_profiling_);
 
   RCLCPP_INFO(node_->get_logger(), "YOLOEngine initialized");
 
