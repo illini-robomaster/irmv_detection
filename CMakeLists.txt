@@ -24,14 +24,14 @@ else()
 endif()
 
 # irmv_detection
-ament_auto_add_library(irmv_detection SHARED
+add_library(irmv_detection SHARED
   src/irm_detector.cpp
   src/yolo_engine.cpp
   src/pnp_solver.cpp
   src/camera.cpp
   src/mv_camera.cpp
 )
-ament_target_dependencies(irmv_detection
+ament_target_dependencies(irmv_detection PUBLIC
   rclcpp
   rclcpp_components
   sensor_msgs
@@ -41,8 +41,8 @@ ament_target_dependencies(irmv_detection
   auto_aim_interfaces
   tf2_geometry_msgs
   tf2
-  fmt
   camera_info_manager
+  visualization_msgs
 )
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
   target_link_directories(irmv_detection PUBLIC
@@ -55,7 +55,7 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
 else ()
   message(FATAL_ERROR "Unsupported platform")
 endif()
-target_link_libraries(irmv_detection
+target_link_libraries(irmv_detection PUBLIC
   nvinfer
   nvonnxparser
   nvinfer_plugin
@@ -64,8 +64,9 @@ target_link_libraries(irmv_detection
   ${CUDA_nppc_LIBRARY}
   ${CUDA_nppi_LIBRARY}
   MVSDK
+  fmt
 )
-target_include_directories(irmv_detection PRIVATE
+target_include_directories(irmv_detection PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${CUDA_INCLUDE_DIRS}
@@ -91,28 +92,11 @@ if(BUILD_TESTING)
   ament_add_gtest(irmv_detection_yolo_test
     test/yolo_test.cpp
   )
-  target_include_directories(irmv_detection_yolo_test PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-    ${CUDA_INCLUDE_DIRS}
-  )
-  ament_target_dependencies(irmv_detection_yolo_test
-    OpenCV
-  )
   target_link_libraries(irmv_detection_yolo_test
     irmv_detection
   )
   ament_add_gtest(irmv_detection_camera_test
     test/camera_test.cpp
-  )
-  target_include_directories(irmv_detection_camera_test PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-    ${CUDA_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/mvsdk/include
-  )
-  ament_target_dependencies(irmv_detection_camera_test
-    OpenCV
   )
   target_link_libraries(irmv_detection_camera_test
     irmv_detection
