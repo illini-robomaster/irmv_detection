@@ -1,34 +1,37 @@
 
 #include "irmv_detection/camera.hpp"
 #include <chrono>
-#include <cstdint>
 #include <mutex>
+#include <stdexcept>
 
 namespace irmv_detection
 {
 VirtualCamera::VirtualCamera(
-  const std::string & video_path, uint8_t * buffer, const CameraCallback & callback, int fps)
-: camera_callback_(callback), video_path_(video_path), fps_(fps)
+  const Config & config, const std::string & video_path, const CameraCallback & callback, int fps)
+: config_(config), camera_callback_(callback), video_path_(video_path), fps_(fps)
 {
   cap_ = cv::VideoCapture(video_path_.string());
   if (!cap_.isOpened()) {
-    throw std::runtime_error("Cannot open video file");
+    throw invalid_camera_error("Cannot open video file");
   }
-  frame_ = cv::Mat(1024, 1280, CV_8UC3, buffer);
+  cap_ >> frame_;
+  cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
+  if (config_.image_size != frame_.size()) {
+    throw std::invalid_argument("Image size does not match");
+  }
+  frame_ = cv::Mat(config_.image_size, CV_8UC3, config_.image_buffer);
   stream_thread_ = std::jthread(&VirtualCamera::stream_thread, this);
   receive_thread_ = std::jthread(&VirtualCamera::receive_thread, this);
-  stream_thread_.detach();
-  receive_thread_.detach();
 }
 
-[[noreturn]] void VirtualCamera::stream_thread()
+void VirtualCamera::stream_thread()
 {
   namespace chrono = std::chrono;
   auto interval = chrono::milliseconds(1000 / fps_);
-  while (true) {
+  while (!shutdown_) {
     auto start_time = chrono::system_clock::now();
     std::unique_lock lock(frame_buffer_mutex_);
-    producer_cv_.wait(lock, [this] { return !frame_ready_; });
+    producer_cv_.wait(lock, [this] { return !frame_ready_ || shutdown_; });
     if (!cap_.grab()) {
       cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
       cap_.grab();
@@ -43,14 +46,14 @@ VirtualCamera::VirtualCamera(
   }
 }
 
-[[noreturn]] void VirtualCamera::receive_thread()
+void VirtualCamera::receive_thread()
 {
   namespace chrono = std::chrono;
   int frame_count = 0;
   auto starting_time = chrono::system_clock::now();
-  while (true) {
+  while (!shutdown_) {
     std::unique_lock lock(frame_buffer_mutex_);
-    consumer_cv_.wait(lock, [this] { return frame_ready_; });
+    consumer_cv_.wait(lock, [this] { return frame_ready_ || shutdown_; });
     camera_callback_(frame_, time_stamp_);
     frame_ready_ = false;
     lock.unlock();
@@ -67,4 +70,11 @@ VirtualCamera::VirtualCamera(
   }
 }
 
+VirtualCamera::~VirtualCamera()
+{
+  shutdown_ = true;
+  // Force wake up the consumer thread
+  consumer_cv_.notify_all();
+  producer_cv_.notify_all();
+}
 }  // namespace irmv_detection

@@ -1,3 +1,5 @@
+#include <stdexcept>
+
 #include <CameraApi.h>
 #include <CameraDefine.h>
 
@@ -18,7 +20,8 @@ void CameraCallbackFunction(
   }
 }
 
-MVCamera::MVCamera(uint8_t * buffer, cv::Size image_size, const CameraCallback & callback) : camera_callback_(callback)
+MVCamera::MVCamera(const Config & config, const CameraCallback & callback)
+: config_(config), camera_callback_(callback)
 {
   CameraSdkInit(0);
 
@@ -27,19 +30,13 @@ MVCamera::MVCamera(uint8_t * buffer, cv::Size image_size, const CameraCallback &
   int iStatus = CameraEnumerateDevice(&tCameraEnumList, &iCameraCounts);
   std::cout << "Camera count: " << iCameraCounts << std::endl;
   if (iStatus != CAMERA_STATUS_SUCCESS) {
-    std::cout << "CameraEnumerateDevice error: " << iStatus << std::endl;
-    exit(0);
-  }
-
-  if (iCameraCounts == 0) {
-    std::cout << "No camera detected" << std::endl;
-    exit(0);
+    throw invalid_camera_error("CameraEnumerateDevice error");
   }
 
   iStatus = CameraInit(&tCameraEnumList, -1, -1, &h_camera_);
   if (iStatus != CAMERA_STATUS_SUCCESS) {
     std::cout << "CameraInit error: " << iStatus << std::endl;
-    exit(0);
+    throw invalid_camera_error("CameraInit error");
   }
 
   CameraSetTriggerMode(h_camera_, 2);
@@ -48,34 +45,40 @@ MVCamera::MVCamera(uint8_t * buffer, cv::Size image_size, const CameraCallback &
 
   tSdkCameraCapbility tCapability;
   CameraGetCapability(h_camera_, &tCapability);
-  std::cout << "pImageSizeDesc->iWidth: " << tCapability.pImageSizeDesc << std::endl;
-  std::cout << "pImageSizeDesc->iHeight: " << tCapability.pImageSizeDesc->iHeight << std::endl;
+  if (
+    config_.image_size !=
+    cv::Size(tCapability.pImageSizeDesc->iWidth, tCapability.pImageSizeDesc->iHeight)) {
+    CameraUnInit(h_camera_);
+    throw std::invalid_argument("Image size does not match");
+  }
+
   double exposure_line_time;
   CameraGetExposureLineTime(h_camera_, &exposure_line_time);
-  CameraSetExposureTime(h_camera_, 5000);
+  CameraSetExposureTime(h_camera_, config_.exposure_time);
 
   int analog_gain;
   CameraGetAnalogGain(h_camera_, &analog_gain);
-  CameraSetAnalogGain(h_camera_, analog_gain);
+  CameraSetAnalogGain(h_camera_, config_.analog_gain);
 
   CameraPlay(h_camera_);
   CameraSetIspOutFormat(h_camera_, CAMERA_MEDIA_TYPE_RGB8);
 
   int trigger_mode;
   CameraGetTriggerMode(h_camera_, &trigger_mode);
-  std::cout << "trigger_mode: " << trigger_mode << std::endl;
+  std::cout << "Confirming trigger_mode: " << trigger_mode << std::endl;
 
   CameraSetCallbackFunction(h_camera_, &CameraCallbackFunction, this, nullptr);
 
-  frame_ = cv::Mat(1024, 1280, CV_8UC3, buffer);
+  frame_ = cv::Mat(config_.image_size, CV_8UC3, config_.image_buffer);
   receive_thread_ = std::jthread(&MVCamera::receive_thread, this);
-  receive_thread_.detach();
 }
 
 MVCamera::~MVCamera()
 {
   CameraStop(h_camera_);
   CameraUnInit(h_camera_);
+  shutdown_ = true;
+  consumer_cv_.notify_all();
 }
 
 void MVCamera::trigger_callback(
@@ -97,9 +100,9 @@ void MVCamera::receive_thread()
   namespace chrono = std::chrono;
   int frame_count = 0;
   auto starting_time = chrono::system_clock::now();
-  while (true) {
+  while (!shutdown_) {
     std::unique_lock lock(frame_buffer_mutex_);
-    consumer_cv_.wait(lock, [this] { return frame_ready_; });
+    consumer_cv_.wait(lock, [this] { return frame_ready_ || shutdown_; });
     camera_callback_(frame_, time_stamp_);
     frame_ready_ = false;
     lock.unlock();

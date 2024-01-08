@@ -71,11 +71,15 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   }
 
   // Initialize camera
-  // camera_ = std::make_unique<VirtualCamera>(
-  //   "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
-  //   yolo_engine_->get_src_image_buffer(), std::bind_front(&IrmDetector::message_callback, this),
-  //   100);
-  camera_ = std::make_unique<MVCamera>(yolo_engine_->get_src_image_buffer(), image_input_size_, std::bind_front(&IrmDetector::message_callback, this));
+  Camera::Config camera_config = {
+    .image_size = image_input_size_,
+    .image_buffer = yolo_engine_->get_src_image_buffer(),
+  };
+    camera_ = std::make_unique<VirtualCamera>(
+      camera_config, "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
+      std::bind_front(&IrmDetector::message_callback, this), 100);
+    // camera_ = std::make_unique<MVCamera>(
+    // camera_config, std::bind_front(&IrmDetector::message_callback, this));
 }
 
 void IrmDetector::create_debug_publishers()

@@ -43,7 +43,6 @@ private:
   std::unique_ptr<PnPSolver> pnp_solver_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armors_pub_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_event_handle_;
-  std::unique_ptr<Camera> camera_;
 
   // Parameters
   bool enable_debug_;      // This publishes visualized image and profiling data
@@ -75,5 +74,6 @@ private:
   visualization_msgs::msg::Marker text_marker_;
   visualization_msgs::msg::MarkerArray marker_array_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_pub_;
+  std::unique_ptr<Camera> camera_;
 };
 }  // namespace irmv_detection
