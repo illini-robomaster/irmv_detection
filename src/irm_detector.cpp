@@ -37,14 +37,6 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
 
   RCLCPP_INFO(node_->get_logger(), "YOLOEngine initialized");
 
-  // Warmup
-  cv::Mat dummy_image = cv::Mat::zeros(image_input_size_, CV_8UC3);
-  for (int i = 0; i < 100; i++) {
-    yolo_engine_->detect();
-  }
-
-  RCLCPP_INFO(node_->get_logger(), "YOLOEngine warmed up");
-
   auto camera_info_manager =
     std::make_unique<camera_info_manager::CameraInfoManager>(node_.get(), "mv_camera");
   auto camera_info_url = node_->declare_parameter(
