@@ -24,14 +24,14 @@ else()
 endif()
 
 # irmv_detection
-add_library(irmv_detection SHARED
+ament_auto_add_library(irmv_detection SHARED
   src/irm_detector.cpp
   src/yolo_engine.cpp
   src/pnp_solver.cpp
   src/camera.cpp
   src/mv_camera.cpp
 )
-ament_target_dependencies(irmv_detection PUBLIC
+ament_target_dependencies(irmv_detection
   rclcpp
   rclcpp_components
   sensor_msgs
@@ -55,7 +55,7 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
 else ()
   message(FATAL_ERROR "Unsupported platform")
 endif()
-target_link_libraries(irmv_detection PUBLIC
+target_link_libraries(irmv_detection
   nvinfer
   nvonnxparser
   nvinfer_plugin
@@ -102,13 +102,6 @@ if(BUILD_TESTING)
     irmv_detection
   )
 endif()
-
-install(TARGETS irmv_detection
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  RUNTIME DESTINATION bin
-  INCLUDES DESTINATION include
-)
 
 ament_auto_package(
   INSTALL_TO_SHARE
