@@ -29,8 +29,7 @@ public:
 private:
   void declare_parameters();
   void create_debug_publishers();
-  void message_callback(
-    cv::Mat & image, std::chrono::time_point<std::chrono::system_clock> time_stamp);
+  void message_callback(Camera::StampedImage & image);
   std::vector<Armor> extract_armors(
     const cv::Mat & image, const std::vector<YoloEngine::bbox> & bboxes) const;
   void visualize_armors(cv::Mat & image, const std::vector<Armor> & armors) const;
@@ -39,7 +38,7 @@ private:
 
   rclcpp::Node::SharedPtr node_;
 
-  std::unique_ptr<YoloEngine> yolo_engine_;
+  std::array<std::unique_ptr<YoloEngine>, 3> yolo_engines_;
   std::unique_ptr<PnPSolver> pnp_solver_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armors_pub_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_event_handle_;

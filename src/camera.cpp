@@ -1,7 +1,7 @@
 
 #include "irmv_detection/camera.hpp"
 #include <chrono>
-#include <mutex>
+#include <memory>
 #include <stdexcept>
 
 #include <fmt/format.h>
@@ -16,12 +16,17 @@ VirtualCamera::VirtualCamera(
   if (!cap_.isOpened()) {
     throw invalid_camera_error("Cannot open video file");
   }
-  cap_ >> frame_;
+  cap_ >> stamped_img_buf_[0].image;
   cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
-  if (config_.image_size != frame_.size()) {
+  if (config_.image_size != stamped_img_buf_[0].image.size()) {
     throw std::invalid_argument("Image size does not match");
   }
-  frame_ = cv::Mat(config_.image_size, CV_8UC3, config_.image_buffer);
+  for (int i = 0; i < 3; i++) {
+    stamped_img_buf_[i].image = cv::Mat(config_.image_size, CV_8UC3, config_.image_buffers[i]);
+    // fmt::print("Buffer: {}\n", (void *)config_.image_buffers[i]);
+    stamped_img_buf_[i].id = i;
+  }
+  triple_buffer_ = std::make_unique<TripleBuffer<StampedImage>>(stamped_img_buf_);
   stream_thread_ = std::jthread(&VirtualCamera::stream_thread, this);
   receive_thread_ = std::jthread(&VirtualCamera::receive_thread, this);
 }
@@ -29,22 +34,30 @@ VirtualCamera::VirtualCamera(
 void VirtualCamera::stream_thread()
 {
   namespace chrono = std::chrono;
-  auto interval = chrono::milliseconds(1000 / fps_);
+  int frame_count = 0;
+  auto starting_time = chrono::system_clock::now();
+  auto interval = chrono::duration<double>(1.0 / fps_);
   while (!shutdown_) {
     auto start_time = chrono::system_clock::now();
-    std::unique_lock lock(frame_buffer_mutex_);
-    producer_cv_.wait(lock, [this] { return !frame_ready_ || shutdown_; });
+    auto stamped_image = triple_buffer_->get_producer_buffer();
+    // fmt::print("Producer: {}\n", stamped_image->id);
     if (!cap_.grab()) {
       cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
       cap_.grab();
     }
-    cap_.retrieve(frame_);
-    cv::cvtColor(frame_, frame_, cv::COLOR_BGR2RGB);
-    time_stamp_ = start_time;
-    frame_ready_ = true;
-    lock.unlock();
-    consumer_cv_.notify_one();
+    // fmt::print("Producer Buffer: {}\n", (void *)stamped_image->image.data);
+    cap_.retrieve(stamped_image->image);
+    stamped_image->time_stamp = start_time;
+    triple_buffer_->producer_commit();
     std::this_thread::sleep_until(start_time + interval);
+    frame_count++;
+    if (frame_count == 200) {
+      auto cur_time = chrono::system_clock::now();
+      fmt::print(
+        "Producer FPS: {}\n", 200 / (chrono::duration<double>(cur_time - starting_time).count()));
+      starting_time = cur_time;
+      frame_count = 0;
+    }
   }
 }
 
@@ -54,17 +67,16 @@ void VirtualCamera::receive_thread()
   int frame_count = 0;
   auto starting_time = chrono::system_clock::now();
   while (!shutdown_) {
-    std::unique_lock lock(frame_buffer_mutex_);
-    consumer_cv_.wait(lock, [this] { return frame_ready_ || shutdown_; });
-    camera_callback_(frame_, time_stamp_);
-    frame_ready_ = false;
-    lock.unlock();
-    producer_cv_.notify_one();
-
+    auto stamped_image = triple_buffer_->get_consumer_buffer();
+    // fmt::print("Consumer: {}\n", stamped_image->id);
+    // fmt::print("Consumer Buffer: {}\n", (void *)stamped_image->image.data);
+    camera_callback_(*stamped_image);
+    // fmt::print("Consumer done\n");
     frame_count++;
-    if (frame_count == 100) {
+    if (frame_count == 200) {
       auto cur_time = chrono::system_clock::now();
-      fmt::print("FPS: {}\n", 100 / (chrono::duration<double>(cur_time - starting_time).count()));
+      fmt::print(
+        "Consumer FPS: {}\n", 200 / (chrono::duration<double>(cur_time - starting_time).count()));
       starting_time = cur_time;
       frame_count = 0;
     }
@@ -74,8 +86,7 @@ void VirtualCamera::receive_thread()
 VirtualCamera::~VirtualCamera()
 {
   shutdown_ = true;
-  // Force wake up the consumer thread
-  consumer_cv_.notify_all();
-  producer_cv_.notify_all();
+  stream_thread_.join();
+  triple_buffer_->producer_commit();  // Commit a dummy to wake up the consumer thread
 }
 }  // namespace irmv_detection

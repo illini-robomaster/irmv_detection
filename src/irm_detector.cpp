@@ -32,8 +32,10 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   // Initialize YOLO engine
   auto model_path =
     ament_index_cpp::get_package_share_directory("irmv_detection") + "/models/yolov7.onnx";
-  yolo_engine_ =
-    std::make_unique<YoloEngine>(model_path, image_input_size_, enable_profiling_);
+  for (int i = 0; i < 3; i++) {
+    yolo_engines_[i] =
+      std::make_unique<YoloEngine>(model_path, image_input_size_, enable_profiling_);
+  }
 
   RCLCPP_INFO(node_->get_logger(), "YOLOEngine initialized");
 
@@ -65,13 +67,14 @@ IrmDetector::IrmDetector(const rclcpp::NodeOptions & options)
   // Initialize camera
   Camera::Config camera_config = {
     .image_size = image_input_size_,
-    .image_buffer = yolo_engine_->get_src_image_buffer(),
-  };
-    camera_ = std::make_unique<VirtualCamera>(
-      camera_config, "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
-      std::bind_front(&IrmDetector::message_callback, this), 100);
-    // camera_ = std::make_unique<MVCamera>(
-    // camera_config, std::bind_front(&IrmDetector::message_callback, this));
+    .image_buffers = {
+      yolo_engines_[0]->get_src_image_buffer(), yolo_engines_[1]->get_src_image_buffer(),
+      yolo_engines_[2]->get_src_image_buffer()}};
+  camera_ = std::make_unique<VirtualCamera>(
+    camera_config, "/mnt/d/RMUL23_Vision_data/3v3/Italy_Torino_group/video_28.mp4",
+  std::bind_front(&IrmDetector::message_callback, this), 200);
+  // camera_ = std::make_unique<MVCamera>(
+  // camera_config, std::bind_front(&IrmDetector::message_callback, this));
 }
 
 void IrmDetector::create_debug_publishers()
@@ -170,15 +173,14 @@ void IrmDetector::declare_parameters()
     node_->declare_parameter<double>("armor.max_large_center_distance", 5.5);
 }
 
-void IrmDetector::message_callback(
-  cv::Mat & image, std::chrono::time_point<std::chrono::system_clock> time_stamp)
+void IrmDetector::message_callback(Camera::StampedImage & image)
 {
   rclcpp::Time extraction_end_time;
   rclcpp::Time pnp_end_time;
 
-  std::vector<YoloEngine::bbox> bboxes = yolo_engine_->detect();
+  std::vector<YoloEngine::bbox> bboxes = yolo_engines_[image.id]->detect();
 
-  std::vector<Armor> armors = extract_armors(yolo_engine_->get_rotated_image(), bboxes);
+  std::vector<Armor> armors = extract_armors(yolo_engines_[image.id]->get_rotated_image(), bboxes);
 
   if (pnp_solver_ == nullptr) return;  // This could happen if camera_info topic is not received yet
 
@@ -186,7 +188,7 @@ void IrmDetector::message_callback(
     if (enable_profiling_) extraction_end_time = node_->now();
   }
 
-  rclcpp::Time time_stamp_ros(time_stamp.time_since_epoch().count(), RCL_ROS_TIME);
+  rclcpp::Time time_stamp_ros(image.time_stamp.time_since_epoch().count(), RCL_ROS_TIME);
   std_msgs::msg::Header header;
   header.stamp = time_stamp_ros;
   header.frame_id = "camera_optical_frame";
@@ -246,7 +248,7 @@ void IrmDetector::message_callback(
     if (enable_profiling_) {
       pnp_end_time = node_->now();
       // Publish profiling data
-      const auto inference_time = yolo_engine_->get_profiling_time();
+      const auto inference_time = yolo_engines_[image.id]->get_profiling_time();
       std_msgs::msg::Float64 total_latency_msg, inference_latency_msg, pnp_latency_msg;
       total_latency_msg.data = (pnp_end_time - time_stamp_ros).seconds() * 1000;
       total_latency_pub_->publish(total_latency_msg);
@@ -256,9 +258,9 @@ void IrmDetector::message_callback(
       pnp_latency_pub_->publish(pnp_latency_msg);
       // Publish debug images
       if (enable_debug_) {
-        cv::Mat visualized_image = image.clone();
+        cv::Mat visualized_image = image.image.clone();
         visualize_armors(visualized_image, armors);
-        yolo_engine_->visualize_bboxes(visualized_image, bboxes);
+        yolo_engines_[image.id]->visualize_bboxes(visualized_image, bboxes);
         cv::putText(
           visualized_image, fmt::format("Total latency: {} ms", total_latency_msg.data),
           cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 2);
@@ -268,11 +270,11 @@ void IrmDetector::message_callback(
         visualized_img_pub_.publish(
           cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", visualized_image).toImageMsg());
 
-        cv::Mat binary_image = image.clone();
+        cv::Mat binary_image = image.image.clone();
         cv::cvtColor(binary_image, binary_image, cv::COLOR_BGR2GRAY);
         cv::threshold(binary_image, binary_image, binary_threshold_, 255, cv::THRESH_BINARY);
         cv::cvtColor(binary_image, binary_image, cv::COLOR_GRAY2BGR);
-        yolo_engine_->visualize_bboxes(binary_image, bboxes);
+        yolo_engines_[image.id]->visualize_bboxes(binary_image, bboxes);
         binary_img_pub_.publish(
           cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8", binary_image).toImageMsg());
       }

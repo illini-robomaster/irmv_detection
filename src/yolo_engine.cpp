@@ -85,6 +85,9 @@ YoloEngine::YoloEngine(
   context_->setTensorAddress("det_classes", output_buffer_.labels);
 
   cudaStreamCreate(&stream_);
+  cudaStreamAttachMemAsync(
+    stream_, src_image_buffer_, 0, cudaMemAttachSingle);
+  cudaStreamSynchronize(stream_);
   // Code below comes from https://github.com/JaapSuter/npp_context_repro/blob/56a7aec8b0b71129d6090cdaea3f27f8fd45a2b9/main.cpp#L37C1-L40C6
   // Currently NPP documentation does not mention anything about the use of NppStreamContext.
   nppGetStreamContext(&npp_context_);

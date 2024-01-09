@@ -6,6 +6,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <CameraDefine.h>
+#include "irmv_detection/triple_buffer.hpp"
 #include <chrono>
 
 namespace irmv_detection
@@ -20,14 +21,20 @@ public:
     int saturation;
     int gamma;
     cv::Size image_size = cv::Size(0, 0);
-    uint8_t * image_buffer = nullptr;
+    std::array<uint8_t *, 3> image_buffers;
+  };
+  struct StampedImage
+  {
+    cv::Mat image;
+    std::chrono::time_point<std::chrono::system_clock> time_stamp;
+    int id;
   };
   class invalid_camera_error : public std::runtime_error
   {
   public:
     using runtime_error::runtime_error;
   };
-  using CameraCallback = std::function<void (cv::Mat &, std::chrono::time_point<std::chrono::system_clock>)>;
+  using CameraCallback = std::function<void (StampedImage &)>;
   Camera() = default;
   virtual ~Camera() = default;
 };
@@ -46,15 +53,11 @@ private:
   std::filesystem::path video_path_;
   cv::VideoCapture cap_;
   int fps_;
-  cv::Mat frame_;
-  std::chrono::time_point<std::chrono::system_clock> time_stamp_;
-  bool frame_ready_ = false;
-  std::mutex frame_buffer_mutex_;
-  std::condition_variable consumer_cv_;
-  std::condition_variable producer_cv_;
+  std::array<StampedImage, 3> stamped_img_buf_;
+  std::unique_ptr<TripleBuffer<StampedImage>> triple_buffer_;
+  std::atomic<bool> shutdown_ = false;
   std::jthread stream_thread_;
   std::jthread receive_thread_;
-  std::atomic<bool> shutdown_ = false;
 };
 
 class MVCamera : public Camera
@@ -69,13 +72,9 @@ private:
   Config config_;
   CameraCallback camera_callback_;
   CameraHandle h_camera_;
-  cv::Mat frame_;
-  std::chrono::time_point<std::chrono::system_clock> time_stamp_;
-  bool frame_ready_ = false;
-  std::mutex frame_buffer_mutex_;
-  std::condition_variable consumer_cv_;
-  std::condition_variable producer_cv_;
-  std::jthread receive_thread_;
+  std::array<StampedImage, 3> stamped_img_buf_;
+  std::unique_ptr<TripleBuffer<StampedImage>> triple_buffer_;
   std::atomic<bool> shutdown_ = false;
+  std::jthread receive_thread_;
 };
 }  // namespace irmv_detection
