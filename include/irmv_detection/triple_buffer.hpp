@@ -1,5 +1,8 @@
 // A simple triple buffer implementation for producer-consumer pattern
 // Credit to https://github.com/remis-thoughts/blog/blob/master/triple-buffering/src/main/md/triple-buffering.md
+// This implementation is completely lock-free.
+// The producer will never be blocked by the consumer,
+// and consumer will only be blocked when the producer haven't produce anything new yet (which in this case waiting is desired).
 
 #ifndef TRIPLE_BUFFER_HPP_
 #define TRIPLE_BUFFER_HPP_
@@ -40,6 +43,8 @@ private:
   std::atomic<Buffer *> writing_;
   std::atomic<Buffer *> ready_;
   std::atomic<Buffer *> reading_;
+  // It's possible that the consumer is faster than the producer, so we need to wait for the producer to produce something.
+  // Note that we used std::atomic waiting from C++20 here, so we don't need to use a mutex and a condition variable.
   std::atomic<bool> consumer_ready_ = false;
 };
 }  // namespace irmv_detection
