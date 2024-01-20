@@ -101,6 +101,12 @@ if(BUILD_TESTING)
   target_link_libraries(irmv_detection_camera_test
     irmv_detection
   )
+  ament_add_gtest(irmv_detection_triple_buffer_test
+    test/triple_buffer_test.cpp
+  )
+  target_link_libraries(irmv_detection_triple_buffer_test
+    irmv_detection
+  )
 endif()
 
 ament_auto_package(

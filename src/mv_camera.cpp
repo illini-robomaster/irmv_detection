@@ -69,7 +69,11 @@ MVCamera::MVCamera(const Config & config, const CameraCallback & callback)
 
   CameraSetCallbackFunction(h_camera_, &CameraCallbackFunction, this, nullptr);
 
-  frame_ = cv::Mat(config_.image_size, CV_8UC3, config_.image_buffer);
+  for (int i = 0; i < 3; i++) {
+    stamped_img_buf_[i].image = cv::Mat(config_.image_size, CV_8UC3, config_.image_buffers[i]);
+    stamped_img_buf_[i].id = i;
+  }
+  triple_buffer_ = std::make_unique<TripleBuffer<StampedImage>>(stamped_img_buf_);
   receive_thread_ = std::jthread(&MVCamera::receive_thread, this);
 }
 
@@ -78,21 +82,28 @@ MVCamera::~MVCamera()
   CameraStop(h_camera_);
   CameraUnInit(h_camera_);
   shutdown_ = true;
-  consumer_cv_.notify_all();
+  triple_buffer_->producer_commit();
 }
 
 void MVCamera::trigger_callback(
   CameraHandle hCamera, BYTE * pFrameBuffer, tSdkFrameHead * pFrameHead)
 {
+  static auto starting_time = std::chrono::system_clock::now();
+  static int frame_count = 0;
   namespace chrono = std::chrono;
   auto start_time = chrono::system_clock::now();
-  std::unique_lock lock(frame_buffer_mutex_);
-  producer_cv_.wait(lock, [this] { return !frame_ready_; });
-  CameraImageProcess(hCamera, pFrameBuffer, frame_.ptr(), pFrameHead);
-  time_stamp_ = start_time;
-  frame_ready_ = true;
-  lock.unlock();
-  consumer_cv_.notify_one();
+  auto stamped_image = triple_buffer_->get_producer_buffer();
+  CameraImageProcess(hCamera, pFrameBuffer, stamped_image->image.data, pFrameHead);
+  stamped_image->time_stamp = start_time;
+  triple_buffer_->producer_commit();
+  frame_count++;
+  if (frame_count == 100) {
+    auto cur_time = chrono::system_clock::now();
+    std::cout << "Producer FPS: "
+              << 100 / (chrono::duration<double>(cur_time - starting_time).count()) << std::endl;
+    starting_time = cur_time;
+    frame_count = 0;
+  }
 }
 
 void MVCamera::receive_thread()
@@ -101,18 +112,13 @@ void MVCamera::receive_thread()
   int frame_count = 0;
   auto starting_time = chrono::system_clock::now();
   while (!shutdown_) {
-    std::unique_lock lock(frame_buffer_mutex_);
-    consumer_cv_.wait(lock, [this] { return frame_ready_ || shutdown_; });
-    camera_callback_(frame_, time_stamp_);
-    frame_ready_ = false;
-    lock.unlock();
-    producer_cv_.notify_one();
-
+    auto stamped_image = triple_buffer_->get_consumer_buffer();
+    camera_callback_(*stamped_image);
     frame_count++;
     if (frame_count == 100) {
       auto cur_time = chrono::system_clock::now();
-      std::cout << "FPS: " << 100 / (chrono::duration<double>(cur_time - starting_time).count())
-                << std::endl;
+      std::cout << "Consumer FPS: "
+                << 100 / (chrono::duration<double>(cur_time - starting_time).count()) << std::endl;
       starting_time = cur_time;
       frame_count = 0;
     }
